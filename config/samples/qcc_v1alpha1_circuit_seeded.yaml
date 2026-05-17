@@ -1,0 +1,53 @@
+# Tier 2 passthrough — reproducible simulation via seeds.
+#
+# Demonstrates the §7a Composition Principle Tier-2 contract: opaque
+# `transpile` and `execute` blocks whose contents are forwarded
+# verbatim to Qiskit's `qiskit.compiler.transpile()` and the resolved
+# provider's `run()` method.  Keys are snake_case to match Qiskit's
+# parameter names directly — no translation happens between this YAML
+# and Qiskit's call site.
+#
+# This Circuit is the thesis-citable reproducibility anchor: applying
+# it twice produces *identical* counts because both the transpilation
+# (layout / SWAP routing) and the simulation (sampling) are pinned to
+# fixed seeds.  Pair with `aer-statevector` (ideal noiseless reference)
+# for the cleanest demonstration; on `fake-*` snapshots, seed_simulator
+# pins the *noise sampling* so the noisy histogram is also reproducible
+# across reruns.
+#
+# Tier-1 fields (shots) stay on the dedicated CRD field — putting
+# `shots: 500` inside `execute` would be silently dropped with a
+# logged warning ("Tier-2 passthrough leaked Tier-1 keys").  Tier-1
+# wins, that is the §7a contract.
+apiVersion: qcc.io/v1alpha1
+kind: Circuit
+metadata:
+  name: bell-state-seeded
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  mode: run
+  shots: 500
+  backendSelector:
+    backendName: aer-statevector
+  source:
+    format: openqasm3
+    body: |
+      OPENQASM 3.0;
+      include "stdgates.inc";
+      qubit[2] q;
+      bit[2] c;
+      h q[0];
+      cx q[0], q[1];
+      c[0] = measure q[0];
+      c[1] = measure q[1];
+  # Tier 2 passthrough — forwarded verbatim to qiskit.compiler.transpile()
+  transpile:
+    seed_transpiler: 7
+  # Tier 2 passthrough — forwarded verbatim to AerSimulator.run() /
+  # SamplerV2.run().  seed_simulator pins both the sampling RNG (noise-
+  # free Aer methods are deterministic anyway, but explicit) and the
+  # noise model RNG on `fake-*` snapshots.
+  execute:
+    seed_simulator: 42

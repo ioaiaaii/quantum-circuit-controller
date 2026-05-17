@@ -1,0 +1,18 @@
+# fake-belem — small IBM Falcon backend, 5 qubits, linear topology.
+# *Deliberately small* so selection demos can show qubit-count affinity:
+# a 2-qubit Bell circuit should prefer Belem over 127q Brisbane all
+# else being equal (less transpile cost, smaller circuit, lower total
+# error).  The "smallest sufficient QPU" heuristic only makes sense
+# when there's actually a small QPU in the comparator set.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: fake-belem
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: local
+    qcc.io/family: falcon
+spec:
+  provider: local
+  kind: simulator

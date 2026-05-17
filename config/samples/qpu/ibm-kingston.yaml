@@ -1,0 +1,22 @@
+# ibm-kingston — IBM Heron r2, 156q.  Sibling of ibm-fez/ibm-marrakesh
+# in the Heron r2 fleet.  See ibm-fez.yaml header for the access /
+# probe / open-plan-quota notes — they apply identically.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: ibm-kingston
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: ibm
+    qcc.io/family: heron-r2
+spec:
+  provider: ibm
+  backendName: ibm_kingston
+  kind: hardware
+  access:
+    credentialSecretRef:
+      name: ibm-quantum-token
+      namespace: quantum-circuit-controller-system
+  capabilities:
+    maxShots: 100000

@@ -1,0 +1,351 @@
+# QCC · Circuit detail dashboard
+#
+# Single-Circuit inspection view.  Pick a Circuit from the template
+# variable at the top; the panels below show everything about that one
+# Circuit's execution: identity, transpile shape, phase timing, and the
+# measurement-outcome distribution.
+#
+# Implements the RED-F half of the paradigm (QCC-Observability.md §3.3.2)
+# at the per-instance granularity.
+#
+# Layout:
+#   Row 1 — Identity + shape
+#     · Header stat strip   : circuit name + qpu · mode · shots · source_format
+#     · Shape strip         : 4 small stats — depth, 1Q, 2Q, total
+#     · IDs table           : provider_job_id + uid with data links
+#         (separated from shape because their magnitudes differ by
+#          ~3 orders of magnitude — bargauging them together squashes
+#          depth/gate counts into invisibly tiny slivers.)
+#   Row 2 — Lifecycle phases (where time went)
+#     · Reads `qcc_circuit_phase_duration_seconds_observed` — the
+#       persistent ObservableGauge derived from `status.conditions`,
+#       not the synchronous histogram.  Survives controller restarts.
+#   Row 3 — Results
+#     · `barchart` (not bargauge) — Qiskit `plot_histogram`-native:
+#       one column per bitstring, count on the X axis.  The Stat /
+#       BarGauge alternatives feel un-quantum.
+#
+# Sibling: qcc-qpu (substrate health, USE-Q).  The `qpu` cell in the
+# Identity strip links across with var-qpu pre-filled.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qcc-circuit-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/component: dashboard
+data:
+  qcc-circuit.json: |
+    {
+      "annotations": {"list": []},
+      "description": "QCC · per-Circuit inspection view. Identity, transpile shape, phase timing, measurement outcomes.",
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "title": "QPU substrate dashboard",
+          "type": "link",
+          "url": "/d/qcc-qpu",
+          "icon": "external link",
+          "targetBlank": false
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "tags": ["qcc", "quantum", "circuit"],
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "label": "Datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "hide": 0,
+            "refresh": 1,
+            "current": {}
+          },
+          {
+            "name": "algorithm",
+            "label": "Algorithm",
+            "type": "query",
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
+            "query": {"query": "label_values(qcc_circuit_info, algorithm)", "refId": "StandardVariableQuery"},
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {"text": "All", "value": "$__all"},
+            "refresh": 1,
+            "sort": 1
+          },
+          {
+            "name": "circuit",
+            "label": "Circuit",
+            "type": "query",
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
+            "query": {"query": "label_values(qcc_circuit_info{algorithm=~\"$algorithm\"}, circuit)", "refId": "StandardVariableQuery"},
+            "multi": false,
+            "includeAll": false,
+            "refresh": 1,
+            "sort": 1
+          }
+        ]
+      },
+      "time": {"from": "now-24h", "to": "now"},
+      "title": "QCC · Circuit detail",
+      "uid": "qcc-circuit",
+      "version": 1,
+      "panels": [
+        {
+          "type": "row",
+          "title": "Identity + shape",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+          "id": 1, "collapsed": false, "panels": []
+        },
+        {
+          "type": "table",
+          "title": "Circuit identity",
+          "description": "Plain key-value listing of qcc_circuit_info labels for the selected Circuit.  Designed as a thesis-figure-style spec card: identity (name, namespace), backend (qpu, mode, shots, source_format), and cross-boundary identifiers (provider_job_id, K8s uid).  `provider_job_id` links out to IBM Quantum's job page (only meaningful for real-hardware ids); `qpu` links to the QPU substrate dashboard for that QPU.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 6, "w": 24, "x": 0, "y": 1},
+          "id": 2,
+          "transparent": true,
+          "targets": [
+            {
+              "expr": "qcc_circuit_info{circuit=\"$circuit\"}",
+              "format": "table",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "transformations": [
+            {
+              "id": "filterFieldsByName",
+              "options": {"include": {"names": ["circuit", "namespace", "qpu", "mode", "shots", "source_format", "provider_job_id", "uid"]}}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "indexByName": {
+                  "circuit": 0,
+                  "namespace": 1,
+                  "qpu": 2,
+                  "mode": 3,
+                  "shots": 4,
+                  "source_format": 5,
+                  "provider_job_id": 6,
+                  "uid": 7
+                },
+                "renameByName": {
+                  "circuit": "Circuit",
+                  "namespace": "Namespace",
+                  "qpu": "QPU",
+                  "mode": "Mode",
+                  "shots": "Shots",
+                  "source_format": "Source format",
+                  "provider_job_id": "Provider job id",
+                  "uid": "K8s UID"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {"align": "left"},
+              "color": {"mode": "continuous-blues"}
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Provider job id"},
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Open on IBM Quantum (only valid for real-hardware job ids)",
+                        "url": "https://quantum.ibm.com/jobs/${__value.text}",
+                        "targetBlank": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "QPU"},
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Open QPU substrate dashboard for this QPU",
+                        "url": "/d/qcc-qpu?var-qpu=${__value.text}",
+                        "targetBlank": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {"showHeader": true, "footer": {"show": false}}
+        },
+        {
+          "type": "stat",
+          "title": "Transpilation",
+          "description": "Post-transpile shape on the resolved QPU.  Depth is the longest chain of dependent gates (coherence-time exposure proxy).  Two-qubit count × the QPU's 2Q error rate is the single best predictor of histogram quality on real hardware.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 3, "w": 24, "x": 0, "y": 7},
+          "id": 3,
+          "transparent": true,
+          "targets": [
+            {"expr": "qcc_circuit_transpile_depth{circuit=\"$circuit\"}", "legendFormat": "Circuit Depth", "refId": "A", "instant": true},
+            {"expr": "qcc_circuit_transpile_gates{circuit=\"$circuit\", kind=\"single_qubit\"}", "legendFormat": "1Q Gates", "refId": "B", "instant": true},
+            {"expr": "qcc_circuit_transpile_gates{circuit=\"$circuit\", kind=\"two_qubit\"}", "legendFormat": "2Q Gates", "refId": "C", "instant": true},
+            {"expr": "qcc_circuit_transpile_gates{circuit=\"$circuit\", kind=\"total\"}", "legendFormat": "Total Gates", "refId": "D", "instant": true}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "—", "color": {"mode": "continuous-blues"}}},
+          "options": {
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "wideLayout": true,
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}
+          }
+        },
+
+        {
+          "type": "row",
+          "title": "Lifecycle phases (where time went)",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 10},
+          "id": 5, "collapsed": false, "panels": []
+        },
+        {
+          "type": "stat",
+          "title": "Running phase decomposition",
+          "description": "Decomposes the `Running` phase wall-clock duration into the two halves that matter:\n\n  on-QPU compute  =  qcc_circuit_usage_seconds (Qiskit Runtime Job.usage())\n  off-QPU         =  Running phase  −  on-QPU compute\n\nThe `Running` phase is real elapsed time between the `Submitted` and `Completed` conditions on the controller side.  on-QPU is the bit IBM was actually executing the circuit on hardware; off-QPU is everything else (queue wait, IBM-side pre/post-processing, network transit, and our controller's poll cadence — i.e. the cost of the orchestration layer that the thesis is measuring).\n\nSimulator paths (aer / fake_*) show `—` for both because they have no QPU-time concept — local CPU compute is folded into the Running phase undifferentiated.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 5, "w": 12, "x": 12, "y": 11},
+          "id": 9,
+          "transparent": true,
+          "targets": [
+            {
+              "expr": "qcc_circuit_usage_seconds{circuit=\"$circuit\"}",
+              "legendFormat": "on-QPU Time",
+              "refId": "A",
+              "instant": true
+            },
+            {
+              "expr": "qcc_circuit_phase_duration_seconds_observed{circuit=\"$circuit\", phase=\"Running\"} - on(circuit) group_left() qcc_circuit_usage_seconds{circuit=\"$circuit\"}",
+              "legendFormat": "off-QPU Time",
+              "refId": "B",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"decimals": 2, "noValue": "—", "unit": "s", "color": {"mode": "continuous-blues"}}
+          },
+          "options": {
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "wideLayout": true,
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}
+          }
+        },
+        {
+          "type": "bargauge",
+          "title": "Time spent per phase",
+          "description": "Per-phase wall-clock duration from `qcc_circuit_phase_duration_seconds_observed` — the ObservableGauge derived from status.conditions[].lastTransitionTime deltas.  Persistent across controller restarts (unlike the synchronous histogram).\n\nGranularity is at K8s-condition level (not the finer 5-phase split):\n  Pending     : creationTimestamp → Accepted\n  Selecting   : Accepted          → Selected\n  Submitting  : Selected          → Submitted (folds Transpiling)\n  Running     : Submitted         → Completed | Failed\n\nOn real-hardware substrates `Running` dominates (IBM queue wait + on-QPU compute; see the orchestration-overhead panel above for the split).  On simulator paths everything is sub-second.  Zero-duration phases (multiple conditions in the same reconcile) display as 0s — that's accurate, not noise.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 5, "w": 12, "x": 0, "y": 11},
+          "id": 6,
+          "transparent": true,
+          "targets": [
+            {
+              "expr": "qcc_circuit_phase_duration_seconds_observed{circuit=\"$circuit\"}",
+              "legendFormat": "{{phase}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "decimals": 2,
+              "noValue": "—",
+              "color": {"mode": "continuous-blues"},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 10},
+                  {"color": "red", "value": 60}
+                ]
+              }
+            }
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "basic",
+            "showUnfilled": true,
+            "valueMode": "color",
+            "namePlacement": "auto",
+            "minVizWidth": 8,
+            "minVizHeight": 16,
+            "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}
+          }
+        },
+
+        {
+          "type": "row",
+          "title": "Results — measurement outcomes (Qiskit plot_histogram-style)",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 16},
+          "id": 7, "collapsed": false, "panels": []
+        },
+        {
+          "type": "barchart",
+          "title": "Outcome counts by bitstring",
+          "description": "qcc_circuit_result_count{circuit=\"$circuit\"} — raw measurement-outcome counts from Circuit.status.results.  One bar per observed bitstring; this is the Qiskit `plot_histogram` form.  For a 2-qubit Bell circuit you'd expect just `00` and `11`; off-diagonal `01`/`10` bars indicate noise (real-hardware substrates) or decoherence (`fake_*` snapshots).",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 17},
+          "id": 8,
+          "transparent": true,
+          "targets": [
+            {
+              "expr": "qcc_circuit_result_count{circuit=\"$circuit\"}",
+              "legendFormat": "{{bitstring}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {"mode": "continuous-blues"},
+              "custom": {"lineWidth": 0, "fillOpacity": 90, "axisLabel": "shots"}
+            }
+          },
+          "options": {
+            "orientation": "vertical",
+            "showValue": "always",
+            "stacking": "none",
+            "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+            "barWidth": 0.85,
+            "groupWidth": 0.85,
+            "barRadius": 0,
+            "fullHighlight": false,
+            "xTickLabelRotation": 0,
+            "xTickLabelSpacing": 0,
+            "tooltip": {"mode": "single", "sort": "none"}
+          }
+        }
+      ]
+    }

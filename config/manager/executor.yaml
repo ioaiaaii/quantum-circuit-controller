@@ -1,0 +1,126 @@
+# qcc-executor — Python gRPC service that owns the Qiskit dependency.
+# Deployed as a separate Deployment + Service so it can scale independently
+# of the controller and so the controller→executor wire is a clean network
+# boundary rather than localhost-loopback in a shared Pod.
+#
+# After kustomize processing (namePrefix=quantum-circuit-controller-):
+#   Service name:  quantum-circuit-controller-executor
+#   Service DNS:   quantum-circuit-controller-executor.quantum-circuit-controller-system.svc:9000
+# The controller dials the short name (same namespace) via the
+# QCC_EXECUTOR_ADDR env var set on its own Deployment.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: executor
+  namespace: system
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/component: executor
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/component: executor
+  ports:
+    - name: grpc
+      port: 9000
+      targetPort: grpc
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: executor
+  namespace: system
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/component: executor
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  # Single replica for the prototype; bump for parallel-circuit workloads.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quantum-circuit-controller
+      app.kubernetes.io/component: executor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quantum-circuit-controller
+        app.kubernetes.io/component: executor
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: qcc-executor
+          image: qcc-executor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 9000
+              protocol: TCP
+          # The Python service reads QCC_EXECUTOR_ADDR for its bind address;
+          # default is 0.0.0.0:9000 inside the image, which is what we want.
+          env:
+            - name: QCC_EXECUTOR_LOG_LEVEL
+              value: INFO
+            - name: QCC_EXECUTOR_WORKERS
+              value: "8"
+            # IBM Quantum Platform credential — optional.  When present,
+            # the IBMAdapter can construct a QiskitRuntimeService and
+            # probe / submit to real IBM hardware (M3 work).  When
+            # absent, IBMAdapter raises AdapterUnavailable on construction
+            # and the executor still serves Aer-backed Circuits without
+            # interruption.  The secret is created out-of-band:
+            #
+            #   kubectl create secret generic ibm-quantum-token \
+            #     -n quantum-circuit-controller-system \
+            #     --from-literal=QISKIT_IBM_TOKEN='<your-token>'
+            #
+            # The `optional: true` on the secretKeyRef means clusters
+            # that haven't created the secret yet still start the
+            # executor cleanly (env var just stays unset).
+            - name: QISKIT_IBM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ibm-quantum-token
+                  key: QISKIT_IBM_TOKEN
+                  optional: true
+            # Override channel for non-Platform IBM accounts (e.g.
+            # ibm_cloud for IBM Cloud users).  Defaults to
+            # ibm_quantum_platform in the adapter; usually no override
+            # needed.
+            - name: QISKIT_IBM_CHANNEL
+              valueFrom:
+                secretKeyRef:
+                  name: ibm-quantum-token
+                  key: QISKIT_IBM_CHANNEL
+                  optional: true
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          # Qiskit + Aer is memory-hungry compared to the Go controller.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            readOnlyRootFilesystem: false  # uv writes lock files in /app at runtime
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+      terminationGracePeriodSeconds: 10

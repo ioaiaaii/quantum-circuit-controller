@@ -1,0 +1,110 @@
+# OpenTelemetry Collector — local dev profile for QCC
+# Chart: https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector
+#
+# Pipelines:
+#   traces  : OTLP in -> batch -> Tempo (and debug for sanity-check via kubectl logs)
+#   metrics : OTLP in -> batch -> Prometheus exporter on :8889 (scraped by Prom via ServiceMonitor)
+#
+# Image: contrib distribution (gives us k8sattributes/spanmetrics/etc. when we want them later)
+
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+presets:
+  logsCollection: {enabled: false}
+  hostMetrics: {enabled: false}
+  kubernetesAttributes: {enabled: false}
+  kubeletMetrics: {enabled: false}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  processors:
+    batch: {}
+  exporters:
+    otlp/tempo:
+      endpoint: tempo.monitoring.svc.cluster.local:4317
+      tls:
+        insecure: true
+    prometheus:
+      endpoint: 0.0.0.0:8889
+    debug:
+      verbosity: basic
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlp/tempo, debug]
+      metrics:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [prometheus, debug]
+
+ports:
+  otlp:
+    enabled: true
+    containerPort: 4317
+    servicePort: 4317
+    protocol: TCP
+  otlp-http:
+    enabled: true
+    containerPort: 4318
+    servicePort: 4318
+    protocol: TCP
+  prometheus:
+    enabled: true
+    containerPort: 8889
+    servicePort: 8889
+    protocol: TCP
+
+serviceMonitor:
+  enabled: true
+  metricsEndpoints:
+    - port: prometheus
+      interval: 30s
+      # honorLabels=true makes the *metric's* labels win when they
+      # collide with a target-derived label of the same name.  This
+      # matters specifically for `namespace`: the metric carries the
+      # Circuit's namespace (via the OTel resource attribute we set
+      # in observability/resource.go), but the scrape target's
+      # `namespace=monitoring` is the OTel Collector's pod namespace
+      # — irrelevant to a QCC query.  Without honor_labels Prometheus
+      # would push our value into `exported_namespace` and keep the
+      # Collector's; this is exactly the wrong direction.
+      #
+      # The same `metric wins` rule applies to `job`, which we then
+      # drop entirely below since neither the metric's `job` (OTel
+      # service.name) nor the target's `job` (Collector scrape name)
+      # is the thing a QCC operator wants to filter by.
+      honorLabels: true
+      # Drop labels that describe the *Collector* (where the scrape
+      # came from) or the OTel meter scope (debug-only metadata)
+      # rather than the *metric* (what QCC measured).  Without this,
+      # every qcc_* series in Prometheus carries 7+ labels from
+      # kube-prometheus-stack's default scrape config plus OTel scope
+      # noise — confusing in PromQL and useless for any QCC query.
+      #
+      # Kept labels: the QCC dimensions (circuit, namespace, qpu,
+      # uid, provider_job_id, mode, source_format, shots, bitstring,
+      # operation, type, kind, condition, status, phase, reason,
+      # provider, processor_*).
+      #
+      # The `otel_scope_.*` family covers otel_scope_name,
+      # otel_scope_schema_url, and otel_scope_version — the whole
+      # OTel meter-scope metadata block, dropped together.
+      metricRelabelings:
+        - action: labeldrop
+          regex: (container|endpoint|instance|pod|service|job|exported_job|otel_scope_.*)

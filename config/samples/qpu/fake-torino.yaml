@@ -1,0 +1,18 @@
+# fake-torino — IBM Heron r1, 133 qubits, CZ-based basis (no ECR).
+# Different architecture and different two-qubit gate compared to the
+# Eagle r3 trio.  Comparing histograms on fake-torino vs fake-brisbane
+# on the same circuit surfaces *both* calibration and architecture
+# effects together, which Move 3 (transpile per backend) and Move 4
+# (layout, mapomatic) of the accuracy chain isolate cleanly in M2.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: fake-torino
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: local
+    qcc.io/family: heron-r1
+spec:
+  provider: local
+  kind: simulator

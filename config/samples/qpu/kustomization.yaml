@@ -1,0 +1,68 @@
+# Sample QPU bundle — fake-backend simulators wrapping real IBM
+# calibration snapshots.  Apply with:
+#
+#     kubectl apply -k config/samples/qpu/
+#
+# After apply, each QPU's status is auto-populated by the controller's
+# ProbeBackend RPC (see QCC-API.md §4.5).  Inspect with:
+#
+#     kubectl get qpus
+#     qcc qpu fake-brisbane
+#
+# Why these seven (three axes of variance):
+#
+# 1. Same architecture, different calibration snapshot (Eagle r3 trio):
+#      fake-brisbane, fake-sherbrooke, fake-osaka, fake-kyoto
+#    Four 127q Eagle r3 backends with the ECR basis.  Identical
+#    structure; *different* frozen calibration snapshots.  Running
+#    the same circuit on each isolates calibration-driven variance
+#    (Wilson et al. 2020, Murali et al. 2019).  Four data points
+#    instead of three makes the spread visible, not just noticeable.
+#
+# 2. Different architecture, same generation family (Heron r1 vs r2):
+#      fake-torino (Heron r1, 133q), fake-marrakesh (Heron r2, 156q)
+#    Both use CZ as the entangling primitive (vs Eagle's ECR), so a
+#    Bell `cx` decomposes to CZ + H-sandwich on these.  Marrakesh is
+#    r2 — improved per-gate fidelity over r1, more qubits.  Useful
+#    for the "newer generation, better per-gate but transpilation
+#    matters" demo we hit earlier with Torino.
+#
+# 3. Smallest sufficient QPU (Falcon trio's last survivor):
+#      fake-belem (5q, linear topology)
+#    Deliberately small so selection can demonstrate qubit-count
+#    affinity — a 2-qubit Bell circuit should prefer Belem over a
+#    127q backend when the user doesn't pin a target.  This makes
+#    M2's "minimise backend over-provisioning" heuristic meaningful.
+#
+# None of the fake-* QPUs need IBM credentials — the fake_provider ships the
+# noise models with qiskit-ibm-runtime.
+#
+# The ibm-* QPUs (M3 — real hardware) require the ibm-quantum-token Secret
+# in the controller namespace.  Without it the executor starts cleanly
+# (secretKeyRef has `optional: true`) but the ibm-* QPUs report
+# Available-with-empty-calibration after the probe fails.  Create the
+# Secret out-of-band:
+#
+#     kubectl create secret generic ibm-quantum-token \
+#         -n quantum-circuit-controller-system \
+#         --from-literal=QISKIT_IBM_TOKEN='<your-token>'
+#
+# Then `kubectl apply -k config/samples/qpu/` picks up live calibration
+# from IBM Cloud at probe time.
+resources:
+# Ideal-noiseless reference simulator (statevector method).  Use as
+# the comparison baseline for outcome-quality metrics (M2.5).  No
+# credentials, deterministic profile, no calibration data.
+- aer-statevector.yaml
+# Fake-* fleet — frozen IBM calibration snapshots; no credentials.
+- fake-brisbane.yaml
+- fake-sherbrooke.yaml
+- fake-osaka.yaml
+- fake-kyoto.yaml
+- fake-torino.yaml
+- fake-marrakesh.yaml
+- fake-belem.yaml
+# IBM Heron r2 fleet (real hardware, requires ibm-quantum-token Secret):
+- ibm-fez.yaml
+- ibm-kingston.yaml
+- ibm-marrakesh.yaml

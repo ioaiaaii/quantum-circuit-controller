@@ -1,0 +1,16 @@
+# fake-brisbane — IBM Eagle r3, 127 qubits, ECR basis.  Frozen real
+# calibration snapshot (typically months old).  Use as the primary
+# demonstrator for calibration-aware execution.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: fake-brisbane
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: local
+    qcc.io/family: eagle-r3
+spec:
+  provider: local
+  kind: simulator
+  # backendName, qubits, basisGates etc. all derived/probed.

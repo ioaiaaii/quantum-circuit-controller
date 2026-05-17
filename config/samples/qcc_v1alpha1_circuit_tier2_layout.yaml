@@ -1,0 +1,47 @@
+# Tier 2 passthrough — transpilation knobs (non-seed example).
+#
+# Demonstrates that the Tier-2 contract is general: any kwarg accepted
+# by `qiskit.compiler.transpile()` flows through `Circuit.spec.transpile`
+# unmodified.  Here the transpilation pipeline is pinned to SABRE for
+# both initial layout and SWAP routing — the modern Qiskit default,
+# made explicit so the choice is visible in the CR (and reproducible
+# across Qiskit upgrades that might shift the implicit default).
+#
+# `fake-brisbane` is used because layout/routing is only interesting
+# when the coupling map has topology constraints; `aer-statevector`
+# is all-to-all and would route trivially.
+#
+# Notice what is *not* here: no `optimization_level` inside `transpile`,
+# because that field has been promoted to Tier-1 vocabulary (Circuit
+# .spec.optimizationLevel).  Tier-2 dropping a Tier-1 key is a
+# configuration smell — see the seeded sample's comment.
+apiVersion: qcc.io/v1alpha1
+kind: Circuit
+metadata:
+  name: bell-state-sabre
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  mode: run
+  shots: 1024
+  optimizationLevel: 2
+  backendSelector:
+    backendName: fake-brisbane
+  source:
+    format: openqasm3
+    body: |
+      OPENQASM 3.0;
+      include "stdgates.inc";
+      qubit[2] q;
+      bit[2] c;
+      h q[0];
+      cx q[0], q[1];
+      c[0] = measure q[0];
+      c[1] = measure q[1];
+  # Tier 2 passthrough — forwarded verbatim to qiskit.compiler.transpile().
+  # SABRE for both layout and routing pins the algorithm choice.
+  transpile:
+    layout_method: sabre
+    routing_method: sabre
+    seed_transpiler: 1234

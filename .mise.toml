@@ -1,0 +1,34 @@
+# Toolchain pinning for the Quantum Circuit Controller.
+# `mise install` provisions everything below.  CI uses jdx/mise-action.
+#
+# Go is intentionally NOT managed here — go.mod's `toolchain` directive owns
+# the Go version (kubebuilder convention).  Any Go on PATH that supports
+# GOTOOLCHAIN=auto will auto-fetch the pinned toolchain on first invocation.
+
+[tools]
+# Language runtimes (Go is owned by go.mod, see note above)
+python = "3.12"
+uv = "latest"
+
+# Kubernetes operator development
+kubectl = "1.31.4"
+kind = "0.27.0"
+helm = "3.16.4"
+kustomize = "5.8.1"
+kubebuilder = "4.14.0"
+
+# Linters & gRPC toolchain
+"golangci-lint" = "2.11.4"
+buf = "1.50.0"
+
+# Kubebuilder/controller-runtime Go tools (installed via the Go backend so
+# they track the same versions referenced by the project's go.mod).
+"go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "v0.20.1"
+"go:sigs.k8s.io/controller-runtime/tools/setup-envtest" = "release-0.23"
+
+[env]
+# Keep envtest binaries in a stable, mise-friendly cache location.
+KUBEBUILDER_ASSETS_DIR = "{{ env.HOME }}/.cache/kubebuilder-envtest"
+
+[settings]
+experimental = true

@@ -1,0 +1,440 @@
+// QCC Executor gRPC service.
+//
+// Mediates between the qcc-controller (Go reconciler) and quantum backends.
+// Internally selects a vendor Adapter (Aer for local, IBM via
+// qiskit-ibm-runtime, …) and runs transpile → submit → poll →
+// fetch_result.  Vendor reach comes from the Qiskit provider ecosystem
+// (qiskit.providers.Backend implementations); alternative substrates
+// (QRMI for Pasqal/multi-vendor, CUDA-Q for NVIDIA) are Ch9 future-work
+// — see QCC-Design-State.md §7d (QEI direction).
+//
+// Two API shapes coexist:
+//
+//   * RunCircuit — synchronous, single-RPC end-to-end. Suits in-process
+//     simulators (Aer) and short hardware jobs where the controller is happy
+//     to block within one reconcile.
+//
+//   * SubmitTask + WatchTask + FetchTaskResult — async lifecycle aligned
+//     with Qiskit's JobV1 contract.  Real-hardware jobs use this path
+//     because they queue for minutes; the controller polls via WatchTask
+//     and fetches counts via FetchTaskResult on subsequent reconcile passes
+//     rather than blocking inside a single RPC.
+//
+// See docs/systems-design/QCC-System-Design.md §6 (architecture), §9
+// (selection model).
+
+syntax = "proto3";
+
+package qcc.executor.v1;
+
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/ioaiaaii/quantum-circuit-controller/gen/proto/qcc/executor/v1;executorv1";
+
+service Executor {
+  // RunCircuit transpiles, submits, and waits for results in a single RPC.
+  // Returns DONE on success or FAILED with a Circuit condition reason.
+  rpc RunCircuit(RunCircuitRequest) returns (RunCircuitResponse);
+
+  // ConvertSource translates a non-OpenQASM3 circuit source (e.g., a Qiskit
+  // Python module that exposes a top-level QuantumCircuit) into OpenQASM 3.
+  // Pure transform; no provider interaction.  Consumed by the controller
+  // before normal lifecycle when Circuit.spec.source.format != openqasm3.
+  rpc ConvertSource(ConvertSourceRequest) returns (ConvertSourceResponse);
+
+  // DrawCircuit renders the circuit as ASCII (Qiskit's text drawer).  Pure
+  // transform; no provider interaction.  Consumed by the controller when
+  // Circuit.spec.mode == draw.
+  rpc DrawCircuit(DrawCircuitRequest) returns (DrawCircuitResponse);
+
+  // ScheduleCircuit transpiles the source against the given backend with
+  // scheduling_method='asap' and returns the resulting per-instruction
+  // timeline (start times in dt, durations, qubit indices).  Pure
+  // analysis — no shots consumed, no remote job created — but unlike
+  // DrawCircuit it does need a backend because scheduling is
+  // backend-specific (durations come from the backend's Target, and
+  // physical qubit assignment depends on layout/routing).  Consumed by
+  // the controller when Circuit.spec.mode == schedule.  Together with
+  // QPUStatus.dtSeconds the response gives readers the µs-scale
+  // envelope of a circuit (Ch1's "9466 dt ≈ 1.89 µs" anchor).
+  rpc ScheduleCircuit(ScheduleCircuitRequest) returns (ScheduleCircuitResponse);
+
+  // SubmitTask submits a circuit asynchronously and returns the task_id
+  // assigned by the adapter (typically the provider's job ID).
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+
+  // WatchTask streams TaskStatus updates until terminal.
+  rpc WatchTask(WatchTaskRequest) returns (stream WatchTaskResponse);
+
+  // FetchTaskResult retrieves results for a terminal task.
+  rpc FetchTaskResult(FetchTaskResultRequest) returns (FetchTaskResultResponse);
+
+  // ProbeBackend asks the executor to introspect a registered backend
+  // (local fake_* simulators and real IBM hardware today) and return
+  // its calibration-relevant metadata: qubit count, native gate
+  // set, coupling-map size, calibration timestamp, and gate/readout
+  // error medians.  The QPUReconciler calls this when a QPU registers
+  // and (in M2) on a TTL-driven refresh; the response populates
+  // QPU.status.{qubits,basisGates,couplingEdges,errorMedians,lastCalibrationTime}.
+  //
+  // Pure introspection — no job submission, no shots consumed.  See
+  // QCC-API.md §4.5 for the field-by-field mapping.
+  rpc ProbeBackend(ProbeBackendRequest) returns (ProbeBackendResponse);
+}
+
+// CircuitSource mirrors api/v1alpha1.CircuitSource.  Carries the circuit body
+// in one of the supported formats; the executor decides how to parse it.
+message CircuitSource {
+  // format names how to interpret body.  Supported: "openqasm3", "qiskit".
+  string format = 1;
+
+  string body = 2;
+}
+
+// TaskSpec captures everything the Executor needs to run a circuit.  Shared
+// between the synchronous RunCircuit and the async SubmitTask paths so the
+// adapter contract stays uniform across both.
+message TaskSpec {
+  // idempotency_key is derived by the controller from the Circuit's
+  // metadata.uid + observedGeneration.  Adapters use it to deduplicate
+  // repeat submissions during controller-restart windows
+  // (QCC-API.md §6).
+  string idempotency_key = 1;
+
+  // qasm is the OpenQASM 3 program body.
+  string qasm = 2;
+
+  uint32 shots = 3;
+
+  BackendTarget target = 4;
+
+  optional uint32 optimization_level = 5;
+
+  optional uint32 timeout_seconds = 6;
+
+  // transpile_options and execute_options carry per-stage *passthrough*
+  // configuration (Composition Principle Tier 2 — see
+  // QCC-Design-State.md §7a).  Each is an opaque dict that the executor
+  // forwards verbatim as keyword arguments to the upstream Qiskit
+  // function — transpile_options → qiskit.compiler.transpile() (after
+  // the positional circuit / backend), execute_options → the adapter's
+  // submit path (e.g. SamplerV2.run for IBM, AerSimulator.run for Aer).
+  //
+  // Keys MUST use snake_case to match Qiskit's parameter names directly
+  // (e.g. seed_transpiler, layout_method, routing_method, basis_gates
+  // for transpile; seed_simulator, memory, shots for execute).  The
+  // adapter performs no translation — what's set here lands on Qiskit's
+  // call site as kwargs.  Unknown keys propagate to Qiskit's own
+  // validation, which surfaces as a Circuit FAILED with the
+  // adapter-supplied error_reason.
+  //
+  // Tier-1 fields on the Circuit CR (shots, optimization_level) take
+  // precedence; setting a Tier-1 field via passthrough is a
+  // configuration smell, not an override path — keep the controller's
+  // contract clean.
+  google.protobuf.Struct transpile_options = 7;
+  google.protobuf.Struct execute_options = 8;
+}
+
+message BackendTarget {
+  // provider discriminates the vendor adapter:
+  //   "local" → in-process Qiskit Aer (no credentials).
+  //   "ibm"   → IBM Quantum via qiskit-ibm-runtime.
+  // Alternative substrates (QRMI, CUDA-Q) are Ch9 future-work — see
+  // QCC-Design-State.md §7d (QEI direction).
+  string provider = 1;
+
+  // backend_name is the provider-native identifier (e.g., "aer_simulator",
+  // "ibm_sherbrooke").  Optional for in-process simulators.
+  string backend_name = 2;
+
+  BackendKind kind = 3;
+}
+
+enum BackendKind {
+  BACKEND_KIND_UNSPECIFIED = 0;
+  BACKEND_KIND_SIMULATOR = 1;
+  BACKEND_KIND_HARDWARE = 2;
+}
+
+// TaskStatus tracks task lifecycle state.  Names mirror Qiskit's JobV1
+// status enum (PENDING / RUNNING / DONE / FAILED / CANCELLED) so adapters
+// can pass them through without translation.
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_PENDING = 1;
+  TASK_STATUS_RUNNING = 2;
+  TASK_STATUS_DONE = 3;
+  TASK_STATUS_FAILED = 4;
+  TASK_STATUS_CANCELLED = 5;
+}
+
+message TranspileMetadata {
+  uint32 depth = 1;
+  uint32 two_qubit_gates = 2;
+  uint32 total_gates = 3;
+}
+
+// ---- ConvertSource / DrawCircuit (pure transforms) --------------------------
+
+message ConvertSourceRequest {
+  CircuitSource source = 1;
+}
+
+message ConvertSourceResponse {
+  // qasm is always OpenQASM 3 when status == DONE.  Empty otherwise.
+  string qasm = 1;
+
+  // status is DONE on success or FAILED with a reason on conversion error.
+  TaskStatus status = 2;
+
+  // error_reason / error_message populated only when status is FAILED
+  // (typically Circuit condition reason "SourceConversionFailed").
+  string error_reason = 3;
+  string error_message = 4;
+}
+
+message DrawCircuitRequest {
+  CircuitSource source = 1;
+}
+
+message DrawCircuitResponse {
+  // drawing is ASCII text suitable for terminal rendering.
+  string drawing = 1;
+
+  TaskStatus status = 2;
+  string error_reason = 3;
+  string error_message = 4;
+}
+
+// ---- ScheduleCircuit (per-instruction timeline, no shots) -------------------
+
+message ScheduleCircuitRequest {
+  CircuitSource source = 1;
+  BackendTarget target = 2;
+  // optimization_level is the transpilation effort knob, identical to
+  // TaskSpec's field.  Optional; defaults server-side to 1.
+  optional int32 optimization_level = 3;
+}
+
+// ScheduledOp is one entry in the scheduled timeline.  All time fields
+// are in *dt cycles* (integer multiples of the backend's
+// control-electronics sample period); the caller converts to seconds
+// via dt_seconds in the parent ScheduleCircuitResponse.  Qubit indices
+// are physical (post-layout) — that's what the schedule actually
+// pertains to; virtual-to-physical mapping is reconstructible from
+// the transpiled circuit but is not surfaced here.
+message ScheduledOp {
+  // name is the instruction name as it appears in the backend's basis
+  // (e.g. "ecr", "sx", "rz", "measure", "delay").
+  string name = 1;
+  // qubits are the *physical* qubit indices this instruction acts on.
+  repeated uint32 qubits = 2;
+  // start_dt is the scheduled start time, in dt cycles, from the
+  // beginning of the schedule.
+  uint64 start_dt = 3;
+  // duration_dt is how long the instruction occupies its qubits, in
+  // dt cycles.  Zero for instructions with no recorded duration
+  // (rare on real hardware; possible for symbolic gates).
+  uint64 duration_dt = 4;
+}
+
+message ScheduleCircuitResponse {
+  // ops is the scheduled-order list of instructions.  For a circuit
+  // with a few thousand 2Q gates this is a few hundred KB on the wire
+  // — well within the gRPC default 4 MB limit.  We don't paginate.
+  repeated ScheduledOp ops = 1;
+  // total_duration_dt is the schedule's end time (max of any op's
+  // start + duration), in dt cycles.
+  uint64 total_duration_dt = 2;
+  // dt_seconds is the backend's control-electronics sample period in
+  // seconds.  Echoed here so the caller can compute wall-clock
+  // durations without a separate ProbeBackend RPC.
+  double dt_seconds = 3;
+  // num_qubits is the backend's qubit count, used by the renderer to
+  // size the per-qubit timeline display.
+  uint32 num_qubits = 4;
+  // backend_used is the resolved backend name (echoes target.backend_name
+  // — present for symmetry with RunCircuitResponse).
+  string backend_used = 5;
+
+  TaskStatus status = 6;
+  string error_reason = 7;
+  string error_message = 8;
+}
+
+// ---- RunCircuit (synchronous) ------------------------------------------------
+
+message RunCircuitRequest {
+  TaskSpec spec = 1;
+}
+
+message RunCircuitResponse {
+  // status is always DONE on success or FAILED on error (PENDING/RUNNING
+  // cannot appear because RunCircuit waits to terminal before returning).
+  TaskStatus status = 1;
+
+  // task_id is the adapter's identifier for the task.  May be empty for
+  // in-process simulators (Aer) where there's no external job.
+  string task_id = 2;
+
+  // error_reason carries a Circuit condition reason
+  // (TranspilationFailed, ProviderSubmissionFailed, …) when status is FAILED.
+  string error_reason = 3;
+
+  string error_message = 4;
+
+  // counts maps classical-bitstring outcomes to observed counts.
+  map<string, uint64> counts = 5;
+
+  TranspileMetadata transpile = 6;
+
+  // backend_used is the backend the adapter actually executed on.
+  string backend_used = 7;
+
+  // usage_seconds is the substrate-reported billable compute time for
+  // the execution (Qiskit Runtime `Job.usage()`).  0.0 when the
+  // adapter is a simulator (Aer / fake_*) or when the substrate
+  // doesn't expose a usage handle.  Distinct from wall-clock
+  // duration: usage_seconds measures only on-QPU compute, not queue
+  // wait or transit.  See QCC-Observability.md §5.2.
+  double usage_seconds = 8;
+}
+
+// ---- SubmitTask / WatchTask / FetchTaskResult (async) ------------------------
+// Aligned with Qiskit's JobV1 contract (submit → status → result).
+// Shipped end-to-end as of M3 (evening 2026-05-16); see QCC-Design-State.md
+// "M3 async path validated end-to-end" decision-log entry.
+
+message SubmitTaskRequest {
+  TaskSpec spec = 1;
+}
+
+message SubmitTaskResponse {
+  string task_id = 1;
+  TranspileMetadata transpile = 2;
+  string backend_used = 3;
+}
+
+message WatchTaskRequest {
+  string task_id = 1;
+}
+
+message WatchTaskResponse {
+  TaskStatus status = 1;
+
+  // message is an adapter-supplied human-readable update (queue position,
+  // running step, etc.).  May be empty.
+  string message = 2;
+}
+
+message FetchTaskResultRequest {
+  string task_id = 1;
+}
+
+message FetchTaskResultResponse {
+  TaskStatus status = 1;
+
+  // error_reason / error_message populated only when status is FAILED.
+  string error_reason = 2;
+  string error_message = 3;
+
+  map<string, uint64> counts = 4;
+
+  // usage_seconds is the substrate-reported billable compute time for
+  // the execution (Qiskit Runtime `Job.usage()`).  0.0 when the
+  // adapter is a simulator (Aer / fake_*) or when the substrate
+  // doesn't expose a usage handle.  See RunCircuitResponse.usage_seconds.
+  double usage_seconds = 5;
+}
+
+message ProbeBackendRequest {
+  // Matches QPU.spec.provider / QPU.spec.backendName so the adapter
+  // dispatch is identical to RunCircuit's: "local" + "fake_brisbane"
+  // resolves to FakeProviderForBackendV2; "ibm" + "ibm_sherbrooke"
+  // resolves to IBMAdapter (M2).
+  string provider = 1;
+  string backend_name = 2;
+}
+
+message ProbeBackendResponse {
+  // num_qubits is the addressable qubit count reported by the backend's
+  // Target.  For fake_* this is the real hardware qubit count (e.g. 127
+  // for fake_brisbane); for real hardware this matches what the vendor
+  // currently exposes.
+  uint32 num_qubits = 1;
+
+  // basis_gates is the native gate set the backend accepts directly
+  // (e.g. ["ecr", "id", "rz", "sx", "x"] for fake_brisbane).
+  // Order is not significant; the controller stores it as a set.
+  repeated string basis_gates = 2;
+
+  // coupling_edges is the count of physical 2-qubit edges in the
+  // backend's coupling map.  Zero means all-to-all (typical for
+  // generic Aer); a positive value means the backend has explicit
+  // topology constraints that Move-4 (layout) will respect.
+  uint32 coupling_edges = 3;
+
+  // last_calibration_time is the RFC 3339 / ISO 8601 timestamp at which
+  // the calibration snapshot was taken.  For fake_* backends this is
+  // the frozen date the snapshot was captured (often months old); for
+  // live hardware it's the most recent vendor refresh.  Empty string
+  // when the backend has no calibration concept (generic Aer).
+  string last_calibration_time = 4;
+
+  // *_error_median are population medians over per-instruction error
+  // rates as reported by the backend's Target.  Each is in [0, 1] where
+  // 0 means "no error data reported" — the controller treats absence
+  // as "skip in scoring," not "perfect."
+  double single_qubit_error_median = 5;
+  double two_qubit_error_median = 6;
+  double readout_error_median = 7;
+
+  // status / error_reason / error_message follow the same DONE/FAILED
+  // convention as the rest of the gRPC surface.  Unknown-backend names
+  // surface here as FAILED with reason NoEligibleBackend.
+  TaskStatus status = 8;
+  string error_reason = 9;
+  string error_message = 10;
+
+  // Coherence-time medians across qubits, in microseconds.
+  // T1 = energy-relaxation lifetime, T2 = dephasing lifetime.
+  // The pair sets the *coherence budget* — total gate time must stay
+  // well under T1/T2 or the circuit decoheres before measurement.
+  // Move 4 (layout) and Move 5 (scoring) in M2 weight by T1 / gate
+  // duration.  Zero when the backend reports no coherence data.
+  double t1_median_us = 11;
+  double t2_median_us = 12;
+
+  // dt_seconds is the backend's control-electronics cycle period — the
+  // smallest time quantum the arbitrary-waveform generator addresses.
+  // All gate durations are integer multiples of dt.  Property of the
+  // *classical control hardware*, not the qubit physics.  Typical IBM
+  // backends report dt ≈ 0.222 ns.  Zero when the backend does not
+  // expose dt (generic Aer).
+  double dt_seconds = 13;
+
+  // single_qubit_duration_median_seconds and two_qubit_duration_median_seconds
+  // are population medians over per-instruction durations reported by
+  // the backend's Target, *in seconds*.  Lets the controller estimate
+  // a circuit's wall-time floor (depth × duration) and compare to T1/T2
+  // for coherence-budget checks.  Zero when no duration data is
+  // reported (generic Aer's Target has no durations).
+  double single_qubit_duration_median_seconds = 14;
+  double two_qubit_duration_median_seconds = 15;
+
+  // processor_family, processor_revision, processor_segment together
+  // identify the chip generation behind the backend (e.g. "Eagle", "3",
+  // "" for fake_brisbane; "Falcon", "4", "T" for fake_belem).  Qiskit
+  // exposes this via backend.processor_type as a {family, revision,
+  // segment?} dict.  We surface it so the thesis (and the controller's
+  // future selection logic) can reason about hardware families instead
+  // of inferring them from `dt` and basis-gate signatures.  All three
+  // are empty strings when the backend has no processor_type metadata
+  // (generic Aer).  processor_revision is *string* rather than int
+  // because Qiskit reports a mix of ints and strings across providers
+  // and we normalise to string at the wire boundary.
+  string processor_family = 16;
+  string processor_revision = 17;
+  string processor_segment = 18;
+}

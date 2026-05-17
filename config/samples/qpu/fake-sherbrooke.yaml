@@ -1,0 +1,17 @@
+# fake-sherbrooke — IBM Eagle r3, 127 qubits, ECR basis.  Same
+# architecture as fake-brisbane and fake-osaka; *different* calibration
+# snapshot.  Running the same circuit across all three isolates the
+# variance attributable to calibration alone, holding architecture
+# and basis-gate set constant.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: fake-sherbrooke
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: local
+    qcc.io/family: eagle-r3
+spec:
+  provider: local
+  kind: simulator

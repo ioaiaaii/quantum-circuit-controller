@@ -1,0 +1,44 @@
+name: Executor (Python)
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  executor:
+    permissions:
+      contents: read
+    name: Lint & Test qcc-executor
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: qcc-executor
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Go is required because mise's go:* backends (controller-gen,
+      # setup-envtest) install via `go install`, even when this job only uses
+      # Python + uv.
+      - name: Set up Go (toolchain pinned in go.mod)
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up mise (provisions python + uv)
+        uses: jdx/mise-action@5083fe46898c414b2475087cc79da59e7da859e8 # v3.5.0
+        with:
+          experimental: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Run tests
+        run: uv run pytest -v

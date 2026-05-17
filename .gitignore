@@ -58,3 +58,12 @@ vendor
 terragrunt
 mocks/
 .go-version
+
+# Project-local tool installs (replaced by mise-managed tools)
+bin/
+.cache/
+dist/
+
+# mise local overrides
+.mise.local.toml
+mise.local.toml

@@ -1,0 +1,11 @@
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: fake-brisbane-test
+spec:
+  provider: local            # or "ibm-fake" once we want adapter-level differentiation
+  backendName: fake_brisbane
+  kind: simulator
+  qubits: 127
+  capabilities:
+    maxShots: 100000

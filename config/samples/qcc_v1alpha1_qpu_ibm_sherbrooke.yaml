@@ -1,0 +1,26 @@
+# ibm-sherbrooke — placeholder hardware QPU showing the schema for real
+# providers.  In M1 this resource exists for shape/demo purposes only:
+# without an IBMAdapter (arrives in M2), the QPU reconciler leaves
+# status.availability = Unknown, so the Circuit selection chain filters
+# it out.  Provide a real Secret holding the IBM Quantum API token to
+# enable actual execution once M2 lands.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: ibm-sherbrooke
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: ibm
+spec:
+  provider: ibm
+  backendName: ibm_sherbrooke
+  kind: hardware
+  qubits: 127
+  region: us-east
+  access:
+    credentialSecretRef:
+      name: ibm-quantum-credentials
+      namespace: quantum-circuit-controller-system
+  capabilities:
+    maxShots: 10000

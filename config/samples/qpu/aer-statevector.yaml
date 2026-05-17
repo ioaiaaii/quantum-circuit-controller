@@ -1,0 +1,45 @@
+# aer-statevector — ideal-noiseless simulator (statevector method).
+#
+# Resolves to `AerSimulator(method='statevector')` at the executor —
+# exact computation, up to ~30 qubits depending on host RAM, no noise
+# model, deterministic across circuits.  Use as the *ideal reference*
+# when computing outcome-quality metrics (Hellinger fidelity vs ideal,
+# TVD, entropy of the distribution) against noisy backends.
+#
+# Why statevector-pinned (vs unpinned `AerSimulator()` automatic method):
+#
+#   - Determinism — `AerSimulator()` with automatic method picks based
+#     on circuit heuristics, so two similar circuits can land on
+#     different internal methods.  Statevector-pinned removes that
+#     variability.  Required for thesis-citable runs.
+#
+#   - Thesis story — outcome-quality metrics (M2.5 observability)
+#     compare noisy results against a known-ideal reference.  This QPU
+#     IS that reference.
+#
+# The unpinned `AerSimulator()` (automatic method) is still reachable
+# for users who want it: register a QPU with `backendName: aer_simulator`.
+# Pinned-method is just the more thesis-aligned default for the samples
+# bundle.
+#
+# Resolution path: spec.provider=local + spec.backendName=aer_statevector
+# → adapter `_AER_METHOD_BACKENDS` dict maps to method='statevector'
+# → AerSimulator(method='statevector') constructed.  No CRD field for
+# the method — encoded entirely in the adapter (Composition Principle §7a).
+#
+# See QCC-API.md §4 for the schema and QCC-Design-State.md §7a.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: aer-statevector
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: qcc-controller
+    qcc.io/provider: local
+    qcc.io/aer-method: statevector
+spec:
+  provider: local
+  backendName: aer_statevector       # adapter resolver → AerSimulator(method='statevector')
+  kind: simulator
+  capabilities:
+    maxShots: 1000000                # statevector has no real shot ceiling; sanity bound

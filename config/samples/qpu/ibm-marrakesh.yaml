@@ -1,0 +1,26 @@
+# ibm-marrakesh — IBM Heron r2, 156q.  Sibling of ibm-fez/ibm-kingston.
+# Calibration variance across the trio is the empirical Ch7 anchor for
+# the Wilson et al. (2020) accuracy-drift argument — same architecture,
+# different snapshots, different histograms.  Comparing ibm-marrakesh
+# (live) against fake-marrakesh (frozen snapshot from Qiskit's data)
+# additionally demonstrates the live-vs-frozen calibration story the
+# thesis Ch1 motivation calls out.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: ibm-marrakesh
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: ibm
+    qcc.io/family: heron-r2
+spec:
+  provider: ibm
+  backendName: ibm_marrakesh
+  kind: hardware
+  access:
+    credentialSecretRef:
+      name: ibm-quantum-token
+      namespace: quantum-circuit-controller-system
+  capabilities:
+    maxShots: 100000

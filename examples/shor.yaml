@@ -1,0 +1,55 @@
+apiVersion: qcc.io/v1alpha1
+kind: Circuit
+metadata:
+  name: shor-n15-a7
+spec:
+  mode: run
+  shots: 1024
+  source:
+    body: "\"\"\"\nShor's algorithm \u2014 quantum period-finding for N=15, a=7.\n\
+      \nShor's algorithm factors a composite integer N by reducing the problem to\n\
+      finding the period r of the modular-exponentiation function\n\n    f(x) = a^x\
+      \ mod N    for some a coprime to N\n\nIf r is even and a^(r/2) is not \u2261\
+      \ -1 (mod N), then\n\n    gcd(a^(r/2) \xB1 1, N)\n\nreveals two non-trivial\
+      \ factors of N.  The quantum subroutine that QCC\nruns is the period-finding\
+      \ circuit; the classical post-processing\n(GCD, continued-fraction expansion)\
+      \ happens outside the circuit and is\nomitted here.\n\nFor N=15, a=7:\n\n  \
+      \  7^1 = 7,  7^2 = 49 \u2261 4,  7^3 \u2261 13,  7^4 \u2261 1   (mod 15)\n\n\
+      so r = 4.  The post-processing then yields:\n\n    gcd(7^2 \u2212 1, 15) = gcd(48,\
+      \ 15) = 3\n    gcd(7^2 + 1, 15) = gcd(50, 15) = 5\n\nLayout\n------\n  - 4 counting\
+      \ qubits (top register, measured)         \u2192 r read out as a peak\n  - 4\
+      \ work qubits initialised to |1\u27E9                    \u2192 modular-multiplication\n\
+      \  - 4 controlled modular multiplications by 7^(2^k)     \u2192 period encoding\n\
+      \  - inverse QFT on the counting register                 \u2192 period extraction\n\
+      \  - measure counting register\n\nThe controlled modular multiplication for\
+      \ N=15 uses the textbook\nswap-network decomposition that is valid only for\
+      \ this specific (a, N)\npair \u2014 sufficient for a thesis-scale demonstration\
+      \ on an Aer simulator,\nnot a general modular-arithmetic block.\n\nRefs\n----\n\
+      \  Shor 1994, \"Algorithms for quantum computation\"\n  Nielsen & Chuang \xA7\
+      5.3\n  Qiskit Textbook, \"Shor's Algorithm\"\n\"\"\"\n\nfrom qiskit import QuantumCircuit\n\
+      from qiskit.circuit.library import QFT\n\n# Parameters.  The (a, N) pair determines\
+      \ the modular-multiplication unitary\n# below; only a \u2208 {2, 4, 7, 8, 11,\
+      \ 13} (the units mod 15) are supported here.\nN = 15\nA = 7\nN_COUNT = 4  #\
+      \ counting-register width \u2014 period r < 2^N_COUNT\n\n\ndef controlled_mult_mod15(a:\
+      \ int, power: int) -> \"Gate\":\n    \"\"\"Return a controlled-U^(power) gate\
+      \ where U|y\u27E9 = |a\xB7y mod 15\u27E9.\n\n    Built from the swap-network\
+      \ + bit-flip decomposition that exploits\n    the order-4 cycles in the multiplicative\
+      \ group (Z/15Z)*.  Valid for\n    N=15 only.\n    \"\"\"\n    if a not in {2,\
+      \ 4, 7, 8, 11, 13}:\n        raise ValueError(f\"a={a} is not coprime to N=15\"\
+      )\n    work = QuantumCircuit(4)\n    for _ in range(power):\n        if a in\
+      \ {2, 13}:\n            work.swap(0, 1)\n            work.swap(1, 2)\n     \
+      \       work.swap(2, 3)\n        if a in {7, 8}:\n            work.swap(2, 3)\n\
+      \            work.swap(1, 2)\n            work.swap(0, 1)\n        if a in {4,\
+      \ 11}:\n            work.swap(1, 3)\n            work.swap(0, 2)\n        if\
+      \ a in {7, 11, 13}:\n            for q in range(4):\n                work.x(q)\n\
+      \    gate = work.to_gate()\n    gate.name = f\"{a}^{power} mod 15\"\n    return\
+      \ gate.control()\n\n\ncircuit = QuantumCircuit(N_COUNT + 4, N_COUNT, name=f\"\
+      shor_N{N}_a{A}\")\n\n# 1. Counting register in superposition.\nfor q in range(N_COUNT):\n\
+      \    circuit.h(q)\n\n# 2. Work register initialised to |1\u27E9.\ncircuit.x(N_COUNT)\n\
+      \n# 3. Controlled modular multiplications by a^(2^k).\nfor k in range(N_COUNT):\n\
+      \    circuit.append(\n        controlled_mult_mod15(A, 2**k),\n        [k] +\
+      \ [i + N_COUNT for i in range(4)],\n    )\n\n# 4. Inverse QFT on the counting\
+      \ register reveals the period.\ncircuit.append(QFT(N_COUNT, inverse=True, do_swaps=True),\
+      \ range(N_COUNT))\n\n# 5. Measure the counting register.  Expected peaks at\
+      \ 0, 4, 8, 12 \u2192 r = 4.\ncircuit.measure(range(N_COUNT), range(N_COUNT))\n"
+    format: qiskit

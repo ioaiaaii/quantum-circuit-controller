@@ -1,0 +1,36 @@
+# ibm-fez — IBM Heron r2, 156q.  Live IBM Quantum Platform hardware,
+# reached via the qiskit-ibm-runtime SDK (provider: ibm).  Requires the
+# ibm-quantum-token Secret to be present in the controller's namespace
+# (see config/manager/executor.yaml env block for the env-var wiring,
+# and Session-1 operational steps in the design state).
+#
+# The QPU controller probes this backend at registration time, reading
+# live calibration from the IBM cloud — same probe code as the fake-*
+# backends, just hitting a different Qiskit Backend implementation
+# (QiskitRuntimeService().backend(name) vs FakeProviderForBackendV2()).
+#
+# Open-plan QPU-time is bounded (~10 minutes/month).  Use deliberately:
+# test against fake-marrakesh (same architecture, frozen snapshot) for
+# development, then promote to ibm-fez via BackendSelector for real-
+# hardware experiments.
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: ibm-fez
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+    qcc.io/provider: ibm
+    qcc.io/family: heron-r2
+spec:
+  provider: ibm
+  backendName: ibm_fez
+  kind: hardware
+  access:
+    credentialSecretRef:
+      name: ibm-quantum-token
+      namespace: quantum-circuit-controller-system
+  capabilities:
+    # IBM Open Plan limit; bumped via paid plans.  Move 1 filters out
+    # Circuits whose spec.shots exceeds this.
+    maxShots: 100000

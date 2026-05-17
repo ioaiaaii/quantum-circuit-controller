@@ -1,0 +1,21 @@
+# Operator-default QPU bundle — currently empty.
+#
+# QCC's PoC scope is to register QPUs explicitly via the samples bundle
+# (kubectl apply -k config/samples/qpu/), so the operator install does
+# not ship any default QPUs.  This keeps names clean (no kustomize
+# namePrefix mangling) and makes every QPU a deliberate choice.
+#
+# If a future deployment needs a default-shipped QPU, add it here and
+# re-include this kustomization in config/default/.  But check first
+# whether the same QPU could live in config/samples/qpu/ — that's the
+# more flexible pattern for thesis-PoC scope.
+#
+# What lives where:
+#   - config/qpu/        — operator defaults (empty today); always
+#                          installed by `make deploy`, gets the
+#                          kustomize namePrefix
+#   - config/samples/qpu/ — user samples (aer-statevector, fake-*,
+#                          ibm-*); applied explicitly via
+#                          `kubectl apply -k config/samples/qpu/`;
+#                          unprefixed names
+resources: []

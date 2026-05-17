@@ -1,0 +1,377 @@
+# QCC · QPU substrate health dashboard
+#
+# Implements the USE-Q half of the paradigm (QCC-Observability.md §3.3.1):
+#
+#   U — Utilization  : calibration freshness (how recently maintained)
+#   S — Saturation   : availability state, queue (future)
+#   E — Errors       : gate/readout error medians, coherence times
+#
+# Audience: operator / SRE asking "is my fleet of backends healthy?"
+# Sibling dashboard: qcc-circuit (RED-F, workload outcomes).
+#
+# Picked up by kube-prometheus-stack's Grafana sidecar via the
+# `grafana_dashboard: "1"` label.
+#
+# Template variables
+# ------------------
+#   $datasource — selects the Prometheus datasource (single source of
+#                 truth; no panel hardcodes a uid)
+#   $family     — multi-select processor family (Eagle / Heron / Falcon /…)
+#   $qpu        — multi-select QPU, *cascades from $family*: the query is
+#                 `label_values(qcc_qpu_info{processor_family=~"$family"}, qpu)`
+#                 so narrowing the family narrows the QPU list, and every
+#                 downstream panel honours both filters via the single
+#                 `qpu=~"$qpu"` selector.  No per-panel joins needed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qcc-qpu-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/component: dashboard
+data:
+  qcc-qpu.json: |
+    {
+      "annotations": {"list": []},
+      "description": "QCC · USE-Q substrate health. Calibration freshness (U), availability state (S), gate/readout error profile (E). See docs/systems-design/QCC-Observability.md §3.3.1.",
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "title": "Circuit workload dashboard",
+          "type": "link",
+          "url": "/d/qcc-circuit",
+          "icon": "external link",
+          "targetBlank": false
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "tags": ["qcc", "quantum", "qpu", "substrate"],
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "label": "Datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "hide": 0,
+            "refresh": 1,
+            "current": {}
+          },
+          {
+            "name": "family",
+            "label": "Processor family",
+            "type": "query",
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
+            "query": {"query": "label_values(qcc_qpu_info, processor_family)", "refId": "StandardVariableQuery"},
+            "multi": true,
+            "includeAll": true,
+            "current": {"text": "All", "value": "$__all"},
+            "refresh": 1,
+            "sort": 1
+          },
+          {
+            "name": "qpu",
+            "label": "QPU",
+            "type": "query",
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
+            "query": {"query": "label_values(qcc_qpu_info{processor_family=~\"$family\"}, qpu)", "refId": "StandardVariableQuery"},
+            "multi": true,
+            "includeAll": true,
+            "current": {"text": "All", "value": "$__all"},
+            "refresh": 1,
+            "sort": 1
+          }
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "title": "QCC · QPU substrate health (USE-Q)",
+      "uid": "qcc-qpu",
+      "version": 1,
+      "panels": [
+        {
+          "type": "row",
+          "title": "S · Availability state",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+          "id": 1, "collapsed": false, "panels": []
+        },
+        {
+          "type": "state-timeline",
+          "title": "QPU availability over time (S)",
+          "description": "State-timeline view of qcc_qpu_condition{condition=\"Ready\", status=\"true\"}. Each row is a QPU; segments show when it was Ready (1) vs not-Ready (0). Discontinuities = backend went offline or the probe failed.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 8, "w": 16, "x": 0, "y": 1},
+          "id": 2,
+          "targets": [
+            {
+              "expr": "qcc_qpu_condition{condition=\"Ready\", status=\"true\", qpu=~\"$qpu\"}",
+              "legendFormat": "{{qpu}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {"lineWidth": 0, "fillOpacity": 80},
+              "mappings": [
+                {"type": "value", "options": {"0": {"text": "Not Ready", "color": "red"}}},
+                {"type": "value", "options": {"1": {"text": "Ready", "color": "green"}}}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}
+            }
+          },
+          "options": {"showValue": "never", "rowHeight": 0.9, "mergeValues": true, "alignValue": "left"}
+        },
+        {
+          "type": "stat",
+          "title": "Ready / Registered (S · snapshot)",
+          "description": "How many QPUs are currently Ready vs how many are registered in the cluster.  Both numerator and denominator respect the $family / $qpu filters via an info-metric join, so 'Ready / Registered' always reflects the current selection.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 1},
+          "id": 3,
+          "targets": [
+            {"expr": "count(qcc_qpu_condition{condition=\"Ready\", status=\"true\", qpu=~\"$qpu\"} == 1)", "legendFormat": "Ready", "refId": "A"},
+            {"expr": "count(qcc_qpu_info{qpu=~\"$qpu\", processor_family=~\"$family\"})", "legendFormat": "Registered", "refId": "B"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "none", "decimals": 0}},
+          "options": {"orientation": "vertical", "textMode": "value_and_name", "colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["last"]}}
+        },
+
+        {
+          "type": "row",
+          "title": "U · Calibration freshness",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9},
+          "id": 4, "collapsed": false, "panels": []
+        },
+        {
+          "type": "bargauge",
+          "title": "Calibration age per QPU (U · lower is fresher)",
+          "description": "time() - qcc_qpu_last_calibration_timestamp_seconds. One bar per QPU.  For fake_* backends this is the snapshot date (typically months old → red); for live IBM backends this is hours since the last vendor recalibration (→ green).",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 10},
+          "id": 5,
+          "targets": [
+            {
+              "expr": "time() - qcc_qpu_last_calibration_timestamp_seconds{qpu=~\"$qpu\"}",
+              "legendFormat": "{{qpu}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 3600},
+                  {"color": "orange", "value": 21600},
+                  {"color": "red", "value": 86400}
+                ]
+              },
+              "color": {"mode": "thresholds"}
+            }
+          },
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "minVizWidth": 50, "minVizHeight": 16, "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}}
+        },
+        {
+          "type": "timeseries",
+          "title": "Calibration age trend (U · drift over time)",
+          "description": "Same value as the bar chart, but over time.  Steep saw-tooth = backend recalibrates regularly; flat-growing line = stale (fake_* snapshots).",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 10},
+          "id": 6,
+          "targets": [
+            {
+              "expr": "time() - qcc_qpu_last_calibration_timestamp_seconds{qpu=~\"$qpu\"}",
+              "legendFormat": "{{qpu}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "s"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull"]}}
+        },
+
+        {
+          "type": "row",
+          "title": "E · Gate & readout error profile",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
+          "id": 7, "collapsed": false, "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Per-operation error medians (E · lower is better)",
+          "description": "qcc_qpu_operation_error_median grouped by (qpu, operation).  2Q errors dominate circuit-execution noise on real hardware.  Readout errors apply at measurement.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 20},
+          "id": 8,
+          "targets": [
+            {
+              "expr": "qcc_qpu_operation_error_median{qpu=~\"$qpu\"}",
+              "legendFormat": "{{qpu}} · {{operation}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 4, "min": 0}},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "mean"]}}
+        },
+        {
+          "type": "heatmap",
+          "title": "2Q error heatmap across QPUs (E · spot outliers)",
+          "description": "Heatmap of qcc_qpu_operation_error_median{operation=\"gate_2q\"} over time, one row per QPU.  Color = error rate (Spectral scheme: green = low, red = high).  Highest-error rows are the worst substrates for two-qubit-heavy circuits.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 20},
+          "id": 9,
+          "targets": [
+            {
+              "expr": "qcc_qpu_operation_error_median{operation=\"gate_2q\", qpu=~\"$qpu\"}",
+              "legendFormat": "{{qpu}}",
+              "refId": "A",
+              "format": "time_series"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 4}},
+          "options": {
+            "calculate": false,
+            "yAxis": {"unit": "short", "decimals": 0},
+            "cellGap": 1,
+            "color": {"mode": "scheme", "scheme": "Spectral", "steps": 64, "reverse": true}
+          }
+        },
+
+        {
+          "type": "row",
+          "title": "E · Coherence (T1, T2)",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 29},
+          "id": 10, "collapsed": false, "panels": []
+        },
+        {
+          "type": "bargauge",
+          "title": "T1 by QPU (E · energy relaxation, higher is better)",
+          "description": "Median T1 across qubits.  Bounds how long a circuit can run before |1⟩ amplitude decays.  Pairs with 2Q duration to give a coherence budget (depth × 2Q_duration / T1).  bargauge panel chosen over barchart for instant-value display with tiny floats — barchart auto-scales the y-axis poorly for sub-millisecond values.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 30},
+          "id": 11,
+          "targets": [
+            {
+              "expr": "qcc_qpu_coherence_seconds{type=\"t1\", qpu=~\"$qpu\"}",
+              "legendFormat": "{{qpu}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "orange", "value": 0.00005},
+                  {"color": "yellow", "value": 0.0001},
+                  {"color": "green", "value": 0.0002}
+                ]
+              },
+              "color": {"mode": "thresholds"}
+            }
+          },
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "minVizWidth": 50, "minVizHeight": 16, "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}}
+        },
+        {
+          "type": "bargauge",
+          "title": "T2 by QPU (E · dephasing, higher is better)",
+          "description": "Median T2 across qubits.  Always ≤ T1 by physics; bounds dephasing-limited circuit duration.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 30},
+          "id": 12,
+          "targets": [
+            {
+              "expr": "qcc_qpu_coherence_seconds{type=\"t2\", qpu=~\"$qpu\"}",
+              "legendFormat": "{{qpu}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "orange", "value": 0.00005},
+                  {"color": "yellow", "value": 0.0001},
+                  {"color": "green", "value": 0.00015}
+                ]
+              },
+              "color": {"mode": "thresholds"}
+            }
+          },
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "minVizWidth": 50, "minVizHeight": 16, "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}}
+        },
+
+        {
+          "type": "row",
+          "title": "Family comparison",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 39},
+          "id": 13, "collapsed": false, "panels": []
+        },
+        {
+          "type": "bargauge",
+          "title": "2Q error by processor family (hardware-generation progression)",
+          "description": "avg over QPUs by(processor_family) — uses the info-metric join.  Reveals how each architecture generation compares: Falcon → Eagle → Heron r1 → Heron r2 ought to show a downward error trend.  Respects $family and $qpu via the join on qcc_qpu_info{...}.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 40},
+          "id": 14,
+          "targets": [
+            {
+              "expr": "avg by(processor_family)(qcc_qpu_operation_error_median{operation=\"gate_2q\", qpu=~\"$qpu\"} * on(qpu) group_left(processor_family) qcc_qpu_info{processor_family=~\"$family\"})",
+              "legendFormat": "{{processor_family}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 4,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 0.005},
+                  {"color": "orange", "value": 0.01},
+                  {"color": "red", "value": 0.02}
+                ]
+              },
+              "color": {"mode": "thresholds"}
+            }
+          },
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}}
+        },
+        {
+          "type": "piechart",
+          "title": "Registered QPUs by family",
+          "description": "count by(processor_family).  Respects $family and $qpu via the standard label filters on qcc_qpu_info.  For the 11-QPU thesis catalog: Heron-dominated with a couple of Eagles and one Falcon for legacy comparison.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 40},
+          "id": 15,
+          "targets": [
+            {
+              "expr": "count by(processor_family)(qcc_qpu_info{qpu=~\"$qpu\", processor_family=~\"$family\"})",
+              "legendFormat": "{{processor_family}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "none"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["value", "percent"]}}
+        }
+      ]
+    }

@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+  except:
+    # The "QRM" service is a project-specific acronym (Quantum Resource Manager)
+    # and reads better as `QRM` than `QRMService` in generated code.
+    - SERVICE_SUFFIX
+breaking:
+  use:
+    - FILE
