@@ -1,49 +1,31 @@
 # QCC Observability Design
 
-**Status:** canonical observability design document for QCC.  As of 2026-05-17 (morning), this is the single source of truth for the observability surface.  Revised from the 2026-05-16 (night) version to reflect the OTel SDK + OTLP push + Collector hub architecture (the canonical mid-2026 K8s observability pipeline, post OpenTelemetry CNCF graduation 2026-05-11).
+**Status:** canonical observability design.
 **Primary thesis consumers:** Chapter 6 (architecture), Chapter 7 (evaluation).
-**Related files:** `QCC-System-Design.md`, `QCC-API.md`, `01-requirements-re-evaluation.md`, `deploy/platform/` (helm values for the deployed stack).
+**Related files:** `QCC-System-Design.md`, `QCC-API.md`, `deploy/platform/` (helm values for the deployed stack).
 
 ---
 
 ## 1. Purpose
 
-QCC observability exists to make the quantum--classical execution path inspectable from the infrastructure layer using cloud-native open standards.
+QCC observability makes the quantum–classical execution path inspectable using cloud-native open standards. The thesis prototype demonstrates that circuit submission, backend selection, transpilation, provider submission, and result retrieval can be correlated through the canonical mid-2026 pipeline — **OTel SDK in the application + OTLP push to an OpenTelemetry Collector + storage in Prometheus/Tempo + visualization in Grafana** — combined with K8s-native artifacts (CRD `.status`, ConfigMaps, Events) for per-instance state.
 
-The goal is *not* a complete quantum telemetry standard, nor a SaaS-grade operational stack.  The thesis prototype demonstrates that circuit submission, backend selection, transpilation, provider submission, and result retrieval can be correlated through the canonical mid-2026 cloud-native observability pipeline: **the OpenTelemetry SDK in the application + OTLP push to an OpenTelemetry Collector + storage in Prometheus/Tempo/Loki + visualization in Grafana**, combined with K8s-native artifacts (CRDs + ConfigMaps + Events) for per-instance state.
+This document realises **R4 (observable execution lifecycle)** from `QCC-System-Design.md` §5.
 
-This document realises **R4 (observable execution lifecycle)** from `QCC-System-Design.md` §5, and grounds **R2 (open-standards observability)** and **R4 (live cross-layer correlation)** from `01-requirements-re-evaluation.md`.
+### Scope today
 
-### Scope today and what's deferred
+| Layer | Status | What's there |
+|---|---|---|
+| **Application metrics** | ✅ shipped | 14 `qcc_*` metrics (8 Circuit + 6 QPU), OTel SDK → OTLP/gRPC → Collector → Prometheus :8889 → kube-prometheus-stack scrape. Cross-boundary identifier linkage via Circuit UID in IBM `runtime_options.tags` (forward) + `provider_job_id` as metric label (reverse). |
+| **K8s state & events** | ✅ shipped | `Circuit` / `QPU` `.status`, K8s Events, ConfigMap-backed artifacts (`drawingRef`, `convertedRef`, `scheduleRef`). Per-instance audit trail via `kubectl describe`. |
+| **Dashboards** | ✅ shipped | Two source-controlled Grafana ConfigMaps (`qcc-circuit-dashboard`, `qcc-qpu-dashboard`) with cascading template variables and sibling cross-links. See §11. |
+| **Distributed tracing** | 🪪 Ch9 | TracerProvider skeleton with no-op exporter at `internal/observability/traces/provider.go`. Flip to `otlptracegrpc` is config-only; Tempo exporter already deployed. |
+| **Executor-side instrumentation** | 🪪 Ch9 | `qcc-executor` (Python) emits no OTel today; observable transitively via the controller's view. |
+| **controller-runtime built-ins** | 🪪 Ch9 | `controller_runtime_*`, `go_*`, `process_*` exist on `:8443/metrics`; scaffold preserved at `config/prometheus/`, ServiceMonitor + RBAC not currently wired. |
+| **OTel logs bridge** | 🪪 Ch9 | `slog` → stdout works today (`kubectl logs`). `otelslog` adoption deferred until `otel/log` v1. |
+| **Outcome-quality metrics** | 🪪 Ch9 | Hellinger / TVD vs `aer-statevector` — Path D+ decision drops this in favour of `qcc run --performance-test` empirical comparison. See `QCC-System-Design.md` §9. |
 
-QCC's observability surface is built in layers, intentionally separated so each can ship and stabilise independently:
-
-**Layer 1 — Application metrics (M2, shipped):**
-
-- 12 `qcc_*` metrics covering QPU calibration state (L0/L1) and Circuit lifecycle (L2/L3 of Kanazawa's pyramid).
-- Emitted from the controller via the OTel SDK, pushed via OTLP-gRPC to the helm-deployed Collector, translated to Prometheus exposition on Collector :8889, scraped by kube-prometheus-stack's Prometheus via the Collector's own ServiceMonitor.
-- Cross-boundary identifier stamp (Circuit UID on IBM `runtime_options.tags`) carries identity across the K8s↔IBM boundary.
-
-**Layer 2 — QCC-internals observability (deferred, future M-?):**
-
-- Direct scrape of the controller's own `controller-runtime` built-ins (`controller_runtime_reconcile_total`, `go_*`, `process_*`) — exists on `:8443/metrics` but **not currently in Prometheus**.  Re-enabling needs the Prometheus subdirectory back in the kustomize default plus a ServiceAccount binding (config/prometheus/ holds the scaffold).
-- Executor-side instrumentation (Python `qcc-executor`): per-RPC durations, per-adapter timings (transpile/submit/poll), provider-call latencies.  Today the executor emits nothing through OTel; its behaviour is observable transitively via the controller's view.
-- Cross-process trace context propagation: the gRPC controller↔executor call would carry W3C trace context when tracing emits.
-
-**Layer 3 — Tracing (wired but not emitting):**
-
-- TracerProvider skeleton at `internal/observability/traces/provider.go` with a no-op exporter.  Flipping to `otlptracegrpc` is a config change, not a code change.  The Collector's Tempo exporter is already deployed and waiting.
-
-**Layer 4 — Logs (slog → stdout today):**
-
-- `slog` is the application API; controller-runtime's logr is bridged via `logr.FromSlogHandler` in `cmd/qcc-controller/main.go`.  Visible via `kubectl logs`.
-- OTel logs bridge (`otelslog`) deferred until `go.opentelemetry.io/otel/log` reaches v1.
-
-**Layer 5 — Domain telemetry (Kanazawa L4, M2.5):**
-
-- Outcome-quality metrics (Hellinger fidelity, TVD against `aer-statevector`) — per-experiment analytical artifacts, not Prometheus-shaped.
-
-The separation by layer reflects an architectural decision: **application observability is what answers thesis questions** (cross-substrate calibration drift, Circuit lifecycle outcomes, cross-boundary identity).  **QCC-internals observability is operational** — useful in production but not load-bearing for the M2 contribution claim.
+The split is deliberate: **application observability answers thesis questions** (cross-substrate calibration drift, lifecycle outcomes, cross-boundary identity); QCC-internals observability is operational polish that doesn't move the contribution claim.
 
 ---
 
@@ -154,58 +136,30 @@ The infrastructure-side observability stack is deployed via Helm into the `monit
 
 ### 3.3 Operational paradigm — **USE-Q + RED-F**
 
-Existing cloud-native monitoring paradigms — RED (Wilkie, microservices), USE (Gregg, resources), the 4 Golden Signals (Google SRE) — were designed for deterministic classical services.  Quantum-classical workloads break their assumptions on three fronts:
+Classical-service monitoring paradigms (RED, USE, the 4 Golden Signals) assume deterministic services. Quantum-classical workloads break that on three fronts: results are probabilistic (success ≠ binary), queue dominates wall-time (the `Submitting` phase can be 99% of Circuit duration on real hardware), and calibration drift is a continuous-quality signal not a fault. QCC extends two established frameworks rather than inventing a new one, adding **one quantum-specific dimension (Fidelity)** to surface the gap explicitly.
 
-1. **Results are probabilistic.**  "Did the request succeed?" isn't binary; it's a distribution over outcomes scored against an ideal.
-2. **Queue dominates wall-time.**  On real hardware (IBM Quantum, AWS Braket), the `Submitting` phase can be 99% of total Circuit duration.  RED's "Duration" hides this without phase decomposition.
-3. **Calibration drift is a continuous-quality signal**, not a fault.  A QPU is "less good" today than yesterday; that's a substrate state, not a failure.
+**USE-Q — QPU substrate health** (Utilization / Saturation / Errors, adapted for quantum substrates). What the operator asks about each backend:
 
-QCC's operational paradigm extends two established frameworks rather than inventing a new one — both for thesis defensibility and because the underlying ideas (resource health and request flow) translate directly to the quantum context.  We add **one quantum-specific dimension** (Fidelity) to make the gap explicit.
-
-#### 3.3.1 USE-Q — QPU substrate health
-
-The Utilization / Saturation / Errors framework (Gregg) adapted for quantum substrates.  Each letter answers an operator-facing question about backend state.  The `-Q` suffix signals quantum adaptation without obscuring the lineage.
-
-| Letter | Question it answers | What it captures (quantum interpretation) | Backing metrics |
-|---|---|---|---|
-| **U** — Utilization | *Is this backend being maintained — has it been calibrated recently enough to trust?* | Calibration freshness (the analog of "uptime as intended use") + processor identity for filtering | `qcc_qpu_last_calibration_timestamp_seconds`, `qcc_qpu_info{processor_family, processor_revision}` |
-| **S** — Saturation | *Is the backend accepting submissions right now? Is it congested or blocked?* | Availability state; (future) queue depth at the provider | `qcc_qpu_condition{condition="Ready"}`, `qcc_qpu_condition{condition="MetadataFresh"}` |
-| **E** — Errors | *What's the substrate's intrinsic error profile — gates and coherence?* | Per-operation error medians + coherence times + gate durations (the quantum analog of "hardware error events") | `qcc_qpu_operation_error_median{operation}`, `qcc_qpu_coherence_seconds{type}`, `qcc_qpu_operation_duration_median_seconds{operation}` |
-
-#### 3.3.2 RED-F — Circuit workload outcomes
-
-The Rate / Errors / Duration framework (Wilkie) extended with **Fidelity** — the quantum-specific quality dimension that classical RED has no analog for.
-
-| Letter | Question it answers | What it captures | Backing metrics |
-|---|---|---|---|
-| **R** — Rate | *How many Circuits are flowing through QCC? At what throughput?* | Phase-transition events per unit time | `rate(qcc_circuits_total[5m])` |
-| **E** — Errors | *What fails, in which layer, and for what reason?* | Failed phase transitions broken down by condition reason (TranspilationFailed, ProviderSubmissionFailed, …) | `qcc_circuits_total{phase="Failed", reason}` |
-| **D** — Duration | *Where does time go inside a Circuit lifecycle?* | Per-phase duration distribution (10ms → 30m buckets) | `qcc_circuit_phase_duration_seconds_bucket` |
-| **F** — Fidelity *(quantum-specific extension)* | *How close was the outcome to the ideal answer?* | Measurement-outcome distribution; future Hellinger / TVD vs `aer-statevector` reference (M2.5) | `qcc_circuit_result_count{bitstring}`, `qcc_circuit_transpile_depth`, `qcc_circuit_transpile_gates{kind}` |
-
-#### 3.3.3 Why F is its own letter (not folded into E)
-
-Errors (the **E**) capture *failures of the system* — a Circuit that didn't complete, an RPC that timed out, a transpile that errored.  Fidelity captures *failures of the physics* — a Circuit that completed but produced a noisy histogram.  Different audiences, different remediations.  A high **E** means "the platform broke" → operator investigates the layer; a low **F** means "the substrate is decoherent / the circuit is too hard for this QPU" → operator considers a different backend or fewer two-qubit gates.  Naming them separately keeps the operator-debugging path distinct from the substrate-quality path.
-
-#### 3.3.4 How USE-Q + RED-F relate to Kanazawa's pyramid
-
-| Paradigm layer | Maps to Kanazawa | What the operator asks |
+| Letter | Question | Backing metrics |
 |---|---|---|
-| USE-Q | L0 (Hardware) + L1 (System) — substrate-state and substrate-saturation signals | "Is the backend healthy / busy?" |
-| RED-F (R, E, D) | L2 (Job) + L3 (Task) — workload-flow signals | "What's happening with my Circuits?" |
-| RED-F (F) | L4 (Domain) — algorithm-outcome signals | "How good were the answers?" |
+| **U** Utilization | Is this backend being maintained — calibration fresh enough to trust? | `qcc_qpu_last_calibration_timestamp_seconds`, `qcc_qpu_info{processor_family, processor_revision}` |
+| **S** Saturation | Is the backend accepting submissions? Congested? | `qcc_qpu_condition{condition="Ready"}`, `qcc_qpu_condition{condition="MetadataFresh"}` |
+| **E** Errors | What's the substrate's intrinsic error profile — gates and coherence? | `qcc_qpu_operation_error_median{operation}`, `qcc_qpu_coherence_seconds{type}`, `qcc_qpu_operation_duration_median_seconds{operation}` |
 
-The paradigms are **the operational view** on top of Kanazawa's **architectural view**.  Kanazawa names the layers; USE-Q + RED-F names the questions an operator asks at each layer.
+**RED-F — Circuit workload outcomes** (Rate / Errors / Duration / Fidelity):
 
-#### 3.3.5 Future extension — derived "Match Quality" signals
+| Letter | Question | Backing metrics |
+|---|---|---|
+| **R** Rate | How many Circuits flowing through QCC, at what throughput? | `rate(qcc_circuits_total[5m])` |
+| **E** Errors | What fails, in which layer, for what reason? | `qcc_circuits_total{phase="Failed", reason}` |
+| **D** Duration | Where does time go inside a Circuit lifecycle? | `qcc_circuit_phase_duration_seconds_bucket`, `qcc_circuit_phase_duration_seconds_observed` |
+| **F** Fidelity *(quantum-specific)* | How close was the outcome to ideal? | `qcc_circuit_result_count{bitstring}`, `qcc_circuit_transpile_depth`, `qcc_circuit_transpile_gates{kind}`, `qcc_circuit_usage_seconds` |
 
-A natural derived layer sits between USE-Q and RED-F: signals that join *substrate state* with *workload shape* to predict outcome quality before measurement.  Examples (computable via PromQL recording rules over the existing instruments — not shipped today):
+**Why F is its own letter.** **E** captures *system failures* (Circuit didn't complete, RPC timed out); **F** captures *physics failures* (Circuit completed but produced a noisy histogram). Different audiences, different remediations — keep the operator-debugging and substrate-quality paths distinct.
 
-- `expected_total_2q_error` = `transpile_gates{kind="two_qubit"} × operation_error_median{operation="gate_2q"}` — the single best predictor of histogram quality on real hardware.
-- `coherence_budget_ratio` = `(depth × 2Q_duration) / T2` — how much of T2 the circuit consumes.
-- `predicted_vs_observed_fidelity_delta` — when M2.5 outcome-quality metrics land, the gap between predicted (from substrate × shape) and observed (from `qcc_circuit_result_count` Hellinger vs ideal) IS the R5 selection-model-quality signal.
+**Maps to Kanazawa's pyramid as the operational view of the architectural layers:** USE-Q ↔ L0+L1 ("Is the backend healthy/busy?"); RED-F's R/E/D ↔ L2+L3 ("What's happening with my Circuits?"); RED-F's F ↔ L4 ("How good were the answers?").
 
-These are deferred to a follow-up — see also the note at the end of §14 — but the framework anticipates them.
+**Future extension (Ch9): derived Match-Quality signals.** Recording rules joining substrate state with workload shape — `expected_total_2q_error = transpile_gates{kind="two_qubit"} × operation_error_median{operation="gate_2q"}`, `coherence_budget_ratio = (depth × 2Q_duration) / T2`, `predicted_vs_observed_fidelity_delta` — sit naturally between USE-Q and RED-F. Computable from existing instruments via PromQL recording rules; deferred.
 
 ---
 
@@ -354,19 +308,16 @@ Each histogram metric should declare its buckets explicitly when registered.
 
 #### 4.7.1 Terminology clash — quantum "histogram" vs Prometheus "histogram"
 
-Two unrelated things in QCC are called "histogram"; readers from both communities will reach for the wrong tool unless this is named explicitly.
+Two unrelated things called "histogram":
 
-| | **Quantum sense** | **Prometheus sense** |
+| | **Quantum** | **Prometheus** |
 |---|---|---|
-| What it is | Frequency distribution of measurement outcomes over discrete bitstrings | Bucketed distribution of a *continuous* variable over many observations |
-| Example | `{"00": 498, "01": 65, "10": 8, "11": 453}` from a Bell circuit | "5% of phase durations fell in (1s, 5s]" |
-| Qiskit API | `plot_histogram(counts)` — produces a **categorical bar chart** | n/a |
-| QCC metric type | **gauge** with `bitstring` label (`qcc_circuit_result_count{bitstring}`) | **histogram** (`qcc_circuit_phase_duration_seconds` with `_bucket{le}`, `_sum`, `_count`) |
-| Right Grafana panel | **Bar chart** with bitstring on X axis (the Qiskit `plot_histogram` layout) | **Heatmap** of `_bucket` over time, or `Histogram` panel for a snapshot |
+| What | Frequency of measurement outcomes over discrete bitstrings | Bucketed distribution of a *continuous* variable |
+| Example | `{"00": 498, "01": 65, "10": 8, "11": 453}` | "5% of phase durations fell in (1s, 5s]" |
+| QCC metric type | **gauge** (`qcc_circuit_result_count{bitstring}`) | **histogram** (`qcc_circuit_phase_duration_seconds_{bucket,sum,count}`) |
+| Right Grafana panel | **Bar chart** with bitstring on X axis (Qiskit `plot_histogram` layout) | **Heatmap** of `_bucket` over time |
 
-**Why this matters in practice**: Grafana's `Histogram` panel takes raw numeric values and bins them — exactly wrong for `qcc_circuit_result_count` which is *already* a categorical key-value mapping.  The correct panel for outcome distributions is `Bar chart` with bitstring as the X-axis field (after a `labelsToFields` transformation extracting the bitstring label).  This is the layout the `qcc-circuit` dashboard uses for the "Outcome distribution per Circuit" and "Cross-substrate Bell ladder" panels.
-
-Conversely, Grafana's `Heatmap` panel is the right viz for `_bucket` series over time — it shows the full distribution evolving, which a p95 line cannot.  The `qcc-circuit` dashboard uses Heatmap for "Phase duration heatmap" and falls back to time-series-of-quantiles for the summary view below it.
+The Circuit dashboard uses Bar chart for the outcome panel (Qiskit-native) and Heatmap-equivalent visualizations where needed. Grafana's literal `Histogram` panel takes raw numeric values and bins them — exactly wrong for `qcc_circuit_result_count`, which is already a categorical key→value mapping.
 
 ### 4.8 Cardinality discipline at thesis scale
 
@@ -387,13 +338,12 @@ The "high cardinality kills Prometheus" rule applies at production-SaaS scale (m
 ### 4.9 Disallowed labels
 
 Never as metric labels:
-- Provider job IDs (IBM Cloud job IDs are unique per submission → unbounded)
-- Trace IDs (same)
 - Raw error messages (unbounded)
 - User identity (privacy + cardinality)
 - Exact calibration timestamps (unbounded; use the timestamp metric instead)
+- Trace IDs (unbounded; reserved for OTel-trace propagation when shipped)
 
-For provider-job correlation, surface IDs on `Circuit.status.providerJobId` (already done) and let the user join CR ↔ provider via that field, not via metric labels.
+**Subtlety on `provider_job_id`.** Provider job IDs *are* allowed on `qcc_circuit_info` because their cardinality is 1-to-1 with the Circuit (one job per Circuit). The label adds no series multiplier — it enriches the existing per-Circuit info series — and earns its keep as the **reverse-linkage anchor** (§6.2): given an IBM Quantum Console job ID, the user resolves back to the owning Circuit with one PromQL query. The general "no unbounded IDs" rule applies; `provider_job_id` is the documented exception under the info-metric pattern (§4.5).
 
 ### 4.10 Controller-side only
 
@@ -762,261 +712,105 @@ Production dashboards (alerting, SLO panels, multi-tenant breakdown) are future 
 
 ### 12.1 Package layout
 
-QCC's observability package mirrors the `ioaiaaii.net` pattern (orchestrator + per-signal subpackages), adapted for the K8s controller context:
-
 ```
 internal/observability/
-  otel.go              # Setup(ctx, cfg) -> (shutdown func(ctx) error, error)
-                       #   - orchestrates resource / metrics / traces / logs init
-                       #   - honors cfg.Enabled (no-op when false)
-                       #   - sets propagator globally (TraceContext + Baggage)
-                       #   - returns single shutdown closure
+  otel.go              # Setup(ctx, cfg) → (shutdown, error): orchestrator
   resource.go          # buildResource() — semconv service.* + k8s.* attrs (downward API)
-  config.go            # Config struct (Enabled, OTLPEndpoint, ServiceName, etc.)
+  config.go            # Config struct (Enabled, OTLPEndpoint, ServiceName, …)
   metrics/
-    provider.go        # newMeterProvider(res, cfg) — OTLP-gRPC exporter to Collector
-    qpu.go             # registerQPUMetrics(meter, cachedClient) — ObservableGauges + callbacks
-    circuit.go         # registerCircuitMetrics(meter, cachedClient) — mixed obs + sync
+    provider.go        # MeterProvider — OTLP-gRPC exporter, PeriodicReader 30s
+    qpu.go             # ObservableGauges + callback for QPU metrics
+    circuit.go         # ObservableGauges + callback for Circuit metrics
     events.go          # Sync Counter + Histogram for phase transitions
-    runtime.go         # optional: runtime instrumentation (heap, GC)
-  traces/
-    provider.go        # newTracerProvider(res, cfg) — skeleton, no-op exporter today
-  logs/
-    provider.go        # placeholder; slog stays primary until OTel logs goes v1
+  traces/provider.go   # TracerProvider skeleton, no-op exporter
+  logs/provider.go     # placeholder; slog stays primary until OTel logs v1
 ```
 
-### 12.2 Controller-side OTel SDK setup
+Mirrors the orchestrator + per-signal-subpackage pattern. `cmd/qcc-controller/main.go` calls `observability.Setup(ctx, cfg)` before `ctrl.NewManager`, defers the returned shutdown closure.
 
-The MeterProvider is owned by `cmd/qcc-controller/main.go`, called *before* `ctrl.NewManager`.  Resource attributes flow through to every metric.
+### 12.2 OTel SDK setup
 
-```go
-// internal/observability/metrics/provider.go
-package metrics
+The MeterProvider uses `otlpmetricgrpc` with `WithInsecure()` and a `PeriodicReader` at 30s interval. Endpoint comes from `OTEL_EXPORTER_OTLP_ENDPOINT` env var (typically `otelcol-opentelemetry-collector.monitoring.svc.cluster.local:4317`). All metric resource attributes flow from the K8s downward API into the OTel `Resource` — see `internal/observability/resource.go` and `config/manager/manager.yaml`'s env block (`OTEL_SERVICE_NAME`, `K8S_POD_*`, `K8S_NAMESPACE_NAME`, `K8S_NODE_NAME`).
 
-import (
-    "context"
-    "time"
+### 12.3 ObservableGauge pattern
 
-    "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-    "go.opentelemetry.io/otel/sdk/metric"
-    "go.opentelemetry.io/otel/sdk/resource"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/credentials/insecure"
-)
+Pattern used by `metrics/qpu.go` and `metrics/circuit.go`: declare instruments, register one callback per resource family, observe lazily per scrape from the controller-runtime cache. Three discipline notes:
 
-func NewMeterProvider(ctx context.Context, res *resource.Resource, endpoint string) (*metric.MeterProvider, error) {
-    exporter, err := otlpmetricgrpc.New(ctx,
-        otlpmetricgrpc.WithEndpoint(endpoint),
-        otlpmetricgrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-    )
-    if err != nil {
-        return nil, err
-    }
-    return metric.NewMeterProvider(
-        metric.WithResource(res),
-        metric.WithReader(metric.NewPeriodicReader(exporter,
-            metric.WithInterval(30*time.Second),
-        )),
-    ), nil
-}
-```
+- Read from the **informer cache** (`client.Client` with cache-backed reads), not the API server — scrape paths must not block on API round-trips.
+- One callback observes many instruments per cache pass — list QPUs/Circuits once, observe all per-resource gauges in one loop.
+- Return errors instead of panicking; the OTel SDK logs them, partial observation is fine.
 
-The PeriodicReader pushes accumulated metrics every 30 seconds via OTLP-gRPC to the Collector at `endpoint` (typically `otelcol-opentelemetry-collector.monitoring:4317`).
+See `internal/observability/metrics/qpu.go::RegisterQPUMetrics` and `metrics/circuit.go::RegisterCircuitMetrics` for the actual code.
 
-### 12.3 ObservableGauge collector example
+### 12.4 Where the synchronous instruments live
 
-```go
-// internal/observability/metrics/qpu.go
-package metrics
-
-import (
-    "context"
-
-    qccv1alpha1 "github.com/ioaiaaii/quantum-circuit-controller/api/v1alpha1"
-    "go.opentelemetry.io/otel"
-    "go.opentelemetry.io/otel/attribute"
-    "go.opentelemetry.io/otel/metric"
-    "sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-func RegisterQPUMetrics(c client.Client) error {
-    meter := otel.Meter("qcc.io/observability/qpu")
-
-    qubits, err := meter.Int64ObservableGauge(
-        "qcc_qpu_qubits",
-        metric.WithDescription("Number of qubits this QPU exposes"),
-    )
-    if err != nil { return err }
-
-    // ... more ObservableGauges declared similarly ...
-
-    _, err = meter.RegisterCallback(func(ctx context.Context, obs metric.Observer) error {
-        var qpus qccv1alpha1.QPUList
-        if err := c.List(ctx, &qpus); err != nil { return err }
-        for _, qpu := range qpus.Items {
-            attrs := metric.WithAttributes(
-                attribute.String("qpu", qpu.Name),
-                attribute.String("provider", qpu.Spec.Provider),
-            )
-            obs.ObserveInt64(qubits, int64(qpu.Status.Qubits), attrs)
-            // ... observe other QPU gauges ...
-        }
-        return nil
-    }, qubits /*, other instruments */)
-    return err
-}
-```
-
-### 12.4 Where in the reconciler to record synchronous instruments
-
-| Metric | Update site | Pattern |
+| Metric | Site | Pattern |
 |---|---|---|
-| `qcc_qpu_*` (all gauges) | ObservableGauge callback (§12.3) — no reconciler change | observe lazily on scrape from cache |
-| `qcc_circuit_*` gauges (info, transpile_*, shots) | Same ObservableGauge callback pattern in `circuit.go` | observe lazily on scrape from cache |
-| `qcc_circuits_total` (counter) | `internal/controller/circuit_controller.go` — on each phase transition | `counter.Add(ctx, 1, attrs)` at the same call site that emits the K8s Event |
-| `qcc_circuit_phase_duration_seconds` (histogram) | Same site — when a phase ends, observe `time.Since(phaseStart)` | `histogram.Record(ctx, elapsed.Seconds(), attrs)` |
+| `qcc_qpu_*` gauges | ObservableGauge callback in `metrics/qpu.go` | observe on scrape from cache |
+| `qcc_circuit_info`, `qcc_circuit_transpile_*`, `qcc_circuit_result_count`, `qcc_circuit_usage_seconds`, `qcc_circuit_phase_duration_seconds_observed` | ObservableGauge callback in `metrics/circuit.go` | observe on scrape from cache |
+| `qcc_circuits_total` (counter) | `internal/controller/circuit_controller.go` defer-hook on each phase transition | `counter.Add(ctx, 1, attrs)` at the K8s Event call site |
+| `qcc_circuit_phase_duration_seconds` (histogram) | Same site, when phase ends | `histogram.Record(ctx, elapsed.Seconds(), attrs)` |
 
-### 12.5 ServiceMonitor for controller-runtime built-ins (deferred to Layer 2)
+### 12.5 Prometheus scrape relabeling
 
-The controller's own `/metrics` endpoint (`:8443`, kubebuilder default with auth filter) carries `controller_runtime_*`, `go_*`, `process_*`.  Scraping it would put those operational signals into Prometheus alongside the OTel-pushed `qcc_*` metrics.  The kubebuilder scaffold already includes the necessary pieces under `config/prometheus/`:
-
-- `monitor.yaml` — the ServiceMonitor itself (HTTPS, bearer-token auth, insecureSkipVerify for self-signed cert)
-- `metrics_auth_role.yaml` + binding — RBAC for the controller's own SA
-
-What's NOT currently shipped (deferred): a ClusterRoleBinding from `quantum-circuit-controller-metrics-reader` to kube-prometheus-stack's Prometheus ServiceAccount.  Without it, Prometheus authenticates successfully but is denied authorization (403).
-
-`config/default/kustomization.yaml`'s reference to `../prometheus` is **commented out** today.  Re-enable when QCC-internals observability (Layer 2 from §1) becomes the focus — that's when the controller-runtime built-ins are useful to surface.
-
-Alternative quick path for dev clusters: pass `--metrics-secure=false` and bind on `:8080` HTTP, drop the CRB requirement entirely.  Documented here so a future operator knows the trade-off without spelunking commit history.
-
-### 12.6 OTel Collector endpoint (controller env)
-
-The QCC controller pushes OTLP to the Collector via an environment variable, set in `config/manager/manager.yaml`:
-
-```yaml
-env:
-- name: OTEL_EXPORTER_OTLP_ENDPOINT
-  value: "http://otelcol-opentelemetry-collector.monitoring.svc.cluster.local:4317"
-- name: OTEL_SERVICE_NAME
-  value: "qcc-controller"
-- name: OTEL_SERVICE_VERSION
-  valueFrom:
-    fieldRef:
-      fieldPath: metadata.labels['app.kubernetes.io/version']
-- name: K8S_POD_NAME
-  valueFrom: { fieldRef: { fieldPath: metadata.name } }
-- name: K8S_POD_UID
-  valueFrom: { fieldRef: { fieldPath: metadata.uid } }
-- name: K8S_NAMESPACE_NAME
-  valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
-- name: K8S_NODE_NAME
-  valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
-```
-
-The downward-API blocks populate `K8S_*` env vars that `internal/observability/resource.go` reads into the OTel `Resource` so every emitted metric carries pod/namespace/node identity.
-
-### 12.6.1 Prometheus scrape relabeling (label hygiene)
-
-kube-prometheus-stack's default scrape config attaches metadata labels to every series — `container`, `endpoint`, `instance`, `job`, `pod`, `service`, `exported_job` — describing the *scrape target* (the Collector) rather than *the metric's subject* (QCC).  Without relabeling, every `qcc_*` series in Prometheus carries 7+ noise labels that crowd PromQL queries.  The OTel Collector additionally emits `otel_scope_name`, `otel_scope_schema_url`, and `otel_scope_version` meter-scope metadata that's debug-only noise for QCC consumers.
-
-The Collector's helm values (`deploy/platform/otelcol-values.yaml`) drop them via the ServiceMonitor, and also turn on `honorLabels` so the metric's `namespace` (the Circuit's) wins against the target's `namespace` (the Collector's pod namespace):
+The Collector's helm values (`deploy/platform/otelcol-values.yaml`) configure the ServiceMonitor with `honorLabels: true` and a `labeldrop` regex to strip scrape-target noise:
 
 ```yaml
 serviceMonitor:
   metricsEndpoints:
     - port: prometheus
       interval: 30s
-      honorLabels: true                    # metric labels win on collision
+      honorLabels: true
       metricRelabelings:
         - action: labeldrop
           regex: (container|endpoint|instance|pod|service|job|exported_job|otel_scope_.*)
 ```
 
-**Why `honorLabels: true` matters**: the metric emits `namespace=<Circuit's namespace>` from the OTel SDK; the scrape target carries `namespace=monitoring` (the Collector's pod namespace) from kube-prometheus-stack's default config.  Without honor-labels, Prometheus renames our value to `exported_namespace` and keeps the target's — i.e., dashboards would show every Circuit as living in the `monitoring` namespace, which is wrong.  Honor-labels reverses the precedence: the metric's value wins, and the target's is dropped along with the other scrape-target labels.
+**Why `honorLabels: true`**: the metric emits `namespace=<Circuit's namespace>`; the scrape target carries `namespace=<Collector's pod namespace>`. Without honor-labels Prometheus renames our value to `exported_namespace` and keeps the target's — dashboards would show every Circuit as living in the Collector namespace. Honor-labels reverses the precedence: the metric's value wins.
 
-**What's kept** (QCC-relevant): all the dimensions the controller actually sets — `circuit`, `namespace`, `qpu`, `mode`, `bitstring`, `operation`, `type`, `kind`, `condition`, `status`, `uid`, `provider`, `processor_family`, `processor_revision`, `phase`, `reason`, `source_format`, `shots`, `provider_job_id`, plus the algorithm-grouping labels `algorithm`, `algorithm_version`, `experiment`, `run_index`, `source_sha256` (promoted from `metadata.labels[qcc.io/*]`).
+**Why `labeldrop` not `keep`**: kube-prometheus-stack ships dozens of dashboards referencing `namespace` / `pod` / etc. `labeldrop` is surgical (one rule, named noise) and doesn't conflict with future-platform labels.
 
-**Why `labeldrop` not `keep`**: kube-prometheus-stack ships dozens of dashboards and rules that reference `namespace`/`pod`/etc.  We use `labeldrop` because it's surgical (one rule, named noise) and doesn't conflict with whatever new labels the platform adds in future releases.
+### 12.6 controller-runtime built-ins (Ch9 polish)
 
-### 12.7 Files to add/touch
-
-| Path | Action |
-|---|---|
-| `go.mod` / `go.sum` | TOUCH — add `go.opentelemetry.io/otel`, `otel/sdk/metric`, `otel/exporters/otlp/otlpmetric/otlpmetricgrpc`, `otel/semconv/v1.26.0` |
-| `internal/observability/{otel,resource,config}.go` | **NEW** — orchestrator + resource + config |
-| `internal/observability/metrics/{provider,qpu,circuit,events}.go` | **NEW** — MeterProvider + per-family collectors |
-| `internal/observability/traces/provider.go` | **NEW** — skeleton TracerProvider (no-op exporter today) |
-| `internal/observability/logs/provider.go` | **NEW** — placeholder for OTel logs v1 |
-| `cmd/qcc-controller/main.go` | TOUCH — slog setup via `logr.FromSlogHandler` + OTel Setup + deferred shutdown |
-| `config/manager/manager.yaml` | TOUCH — `OTEL_*` env vars + downward-API attrs (§12.6) |
-| `config/prometheus/servicemonitor.yaml` | **NEW** (§12.5) |
-| `config/prometheus/kustomization.yaml` | **NEW** — bundles ServiceMonitor for `kubectl apply -k` |
-| `deploy/grafana/qcc-dashboard.json` | **NEW** — exported Grafana dashboard (M2 deliverable) |
-| `qcc-executor/src/qcc_executor/adapters/ibm.py` | TOUCH — stamp `qcc.circuit.uid:<uid>` onto `runtime_options.tags` in `submit()` (§6) |
+The controller's `/metrics` endpoint (`:8443`, kubebuilder default with auth filter) carries `controller_runtime_*`, `go_*`, `process_*`. The kubebuilder scaffold under `config/prometheus/` includes the ServiceMonitor + auth-role pieces, but `config/default/kustomization.yaml`'s reference is currently **commented out** — Ch9 polish to surface QCC-internals observability alongside the OTel-pushed `qcc_*` metrics. See §1 layer table.
 
 ---
 
 ## 13. Evaluation mapping
 
-How this observability surface grounds the thesis requirements R1–R5:
+How this observability surface grounds the thesis requirements:
 
 | Requirement | Evidence |
 |---|---|
-| **R1** — production deployment patterns | controller-runtime reconciler metrics; idempotency-under-restart test (M4); Helm chart (M4) |
-| **R2** — cross-boundary observability using open standards | The 12 metrics in §5 + `qcc.*` semantic conventions documented in this file + Grafana dashboards |
-| **R3** — vendor-neutral orchestration (interface property) | Same metric schema works across `local`, `ibm`, and any future adapters — `qpu, provider, kind` labels prove adapter independence |
-| **R4** — live cross-layer correlation | Cross-boundary ID linkage (§6) — Circuit UID flows from K8s through gRPC to IBM job tags |
-| **R5** — calibration-aware backend selection | `qcc_qpu_*` metrics + `mode=select` traces in `Circuit.status.selectionSummary` — reproducible across calibration cycles |
+| **R1** — declarative submission + production deployment patterns | `Circuit` CRD lifecycle + `Circuit.status` audit trail; idempotency argued structurally from §6 of `QCC-API.md` (Helm chart + restart test are 🪪 Ch9) |
+| **R2** — cross-boundary observability using open standards | The 14 `qcc_*` metrics in §5 + the `qcc.*` semantic-conventions schema documented in this file + Grafana dashboards (§11) |
+| **R3** — calibration-aware orchestration | `qcc run --performance-test` empirical cross-substrate comparison; `qcc_qpu_*` calibration metrics; predictive scoring variants are 🪪 Ch9 |
+| **R4** — live cross-layer correlation | §6 bidirectional cross-boundary identifier linkage (UID → IBM job-tags forward; `provider_job_id` → `qcc_circuit_info` label reverse) |
+| **R5** — separation of orchestration and quantum logic | Same metric schema works across `AerAdapter` and `IBMAdapter` unchanged; `qpu`, `provider`, `kind` labels prove adapter independence |
 
-### 13.1 Quantitative targets (Ch7 reports against these)
+### 13.1 Quantitative targets (Ch7)
 
 | Target | Threshold | How measured |
 |---|---|---|
-| Controller reconciliation latency | <1s at p95 for phase transitions | `histogram_quantile(0.95, rate(controller_runtime_reconcile_time_seconds_bucket[5m]))` |
 | Cross-boundary identifier coverage | 100% of IBM submissions carry `qcc.circuit.uid` job tag | IBM Console job-tag inspection over a sample of runs |
 | Selection consistency under stable calibration | ≥95% same-backend outcome over repeated `mode=select` runs within a 5-min calibration window | Repeated `mode=select` of identical Circuit; same-backend rate |
-| Metric cardinality footprint | <1000 active series for 10 registered QPUs under representative load | `count({__name__=~"qcc_.*"})` |
-| Idempotency under restart | 0 duplicate vendor submissions across 10 controller-restart trials | Per-Circuit count of `qcc_circuits_total{phase="Submitting"}` increments = 1 |
-
-Chapter 7 reports observed values against each target; misses are discussed in Chapter 8 alongside limitations.
+| Metric cardinality footprint | <1500 active series at thesis scale (~50 Circuits, 10 QPUs) | `count({__name__=~"qcc_.*"})` |
+| Orchestration overhead | Quantified per-Circuit via `Running − usage_seconds` on the dashboard | `qcc_circuit_phase_duration_seconds_observed{phase="Running"} - qcc_circuit_usage_seconds` |
 
 ---
 
 ## 14. Out of scope
 
-Explicitly NOT part of QCC's M2 observability surface (deferred to follow-up milestones or post-thesis):
+Deferred to Ch9 future-work or post-thesis:
 
-- **OpenTelemetry tracing emission** — the TracerProvider skeleton lives in `internal/observability/traces/provider.go` and the Tempo backend is deployed, but no spans are emitted today.  Tracing is a *config flip* (swap the no-op exporter for `otlptracegrpc`) when we're ready — likely M3 follow-up or after VQE work lands.  When traces emit, **exemplars on the existing histograms become automatic** via `OTEL_METRICS_EXEMPLAR_FILTER=trace_based`.
-- **OTel logs SDK + bridge.**  Currently slog → stdout → `kubectl logs`.  When `go.opentelemetry.io/otel/log` reaches v1, add `otelslog` bridge in `internal/observability/logs/provider.go` — three lines, no call-site changes.  Logs then route via the same Collector → Loki (when deployed).
-- **OpenTelemetry Operator + Instrumentation CR.**  Not needed at thesis scale (one hand-instrumented controller).  Becomes worthwhile if/when we want auto-injection of OTel SDK into the Python `qcc-executor` pod.
-- **Loki for log aggregation.**  Deferred; controller logs via `kubectl logs` cover per-pod inspection.  Loki + the `otelslog` bridge can be added together as a follow-up.
-- **Domain-level algorithm telemetry** (Kanazawa L4 — VQE convergence, fidelity, TVD).  These are M2.5 outcome-quality work, not Prometheus-shaped; per-experiment analytical artifacts via scripts.
-- **OpenTelemetry semantic-conventions OTEP submission.**  The `qcc.*` schema in §5 stands as a candidate proposal, not a claimed standard.
-- **PrometheusRule (alerts and recording rules).**  Deferred to M4 — this document specifies the *surface*; alerting comes after the surface stabilizes.
-- **Multi-tenant observability boundaries**, **production alert policy**, **provider billing/cost telemetry**, **full L4 application-domain telemetry**.
-
-These are valid future-work topics, not required to demonstrate the QCC architecture in M2.
-
----
-
-## 15. Implementation sizing
-
-Single focused session, controller-only:
-
-| Chunk | Estimate |
-|---|---|
-| `internal/observability/metrics.go` — declarations + registration | ~1h |
-| QPU collector: read `QPU.status`, emit metrics in `qpu_controller.go` | ~1.5h |
-| Circuit metrics on phase transitions + transpile completion | ~1.5h |
-| Custom histogram buckets | ~30 min |
-| ServiceMonitor + kustomize wiring | ~30 min |
-| Cross-boundary ID stamp (IBM `job_tags`) | ~1h |
-| Optional dev-loop Prometheus + Grafana for kind | ~1h |
-| Grafana dashboard JSON (~7 panels) | ~1.5h |
-| Verify: scrape, query each metric, spot-check dashboard | ~30 min |
-| **Total** | **~9h, one focused session (possibly bleeding into a second)** |
-
-**Sequence**: build the QPU `_info` collector first (smallest, exercises the whole wiring path through registry + scrape).  Verify it appears in `curl localhost:8080/metrics`.  Then add the rest one collector at a time, scraping after each.  Cross-boundary ID stamp can land at any point; it's independent of the metrics work.
+- **OpenTelemetry tracing emission** — TracerProvider skeleton lives in `internal/observability/traces/provider.go` with no-op exporter; Tempo deployed. Flipping to `otlptracegrpc` is config-only. When traces emit, exemplars on existing histograms become automatic via `OTEL_METRICS_EXEMPLAR_FILTER=trace_based`.
+- **OTel logs bridge.** Today `slog` → stdout → `kubectl logs`. Adopt `otelslog` when `go.opentelemetry.io/otel/log` reaches v1.
+- **OpenTelemetry Operator + Instrumentation CR.** Not needed at one-controller scale; becomes useful for auto-injecting OTel SDK into `qcc-executor` (Python).
+- **Loki** for log aggregation. Routes via same Collector when adopted.
+- **Domain-level outcome-quality** (Kanazawa L4 — Hellinger, TVD) — Ch9, in favour of `qcc run --performance-test` empirical comparison.
+- **OTEP submission** of the `qcc.*` schema to the OpenTelemetry community — Ch9 ecosystem-engagement; the schema design is the thesis contribution.
+- **PrometheusRule** (alerts + recording rules).
+- **Multi-tenant boundaries, provider billing/cost telemetry, production alert policy.**
 
 ---
 

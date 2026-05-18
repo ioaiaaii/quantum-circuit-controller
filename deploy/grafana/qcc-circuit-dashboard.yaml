@@ -81,11 +81,24 @@ data:
             "sort": 1
           },
           {
+            "name": "experiment",
+            "label": "Experiment",
+            "type": "query",
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
+            "query": {"query": "label_values(qcc_circuit_info{algorithm=~\"$algorithm\"}, experiment)", "refId": "StandardVariableQuery"},
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {"text": "All", "value": "$__all"},
+            "refresh": 1,
+            "sort": 1
+          },
+          {
             "name": "circuit",
             "label": "Circuit",
             "type": "query",
             "datasource": {"type": "prometheus", "uid": "${datasource}"},
-            "query": {"query": "label_values(qcc_circuit_info{algorithm=~\"$algorithm\"}, circuit)", "refId": "StandardVariableQuery"},
+            "query": {"query": "label_values(qcc_circuit_info{algorithm=~\"$algorithm\", experiment=~\"$experiment\"}, circuit)", "refId": "StandardVariableQuery"},
             "multi": false,
             "includeAll": false,
             "refresh": 1,

@@ -54,6 +54,16 @@ type runOpts struct {
 	// an escape hatch without committing to additional reserved
 	// keys in the API package.
 	extraLabels []string
+	// performanceTest, when true, discovers every simulator QPU in
+	// the cluster (or simulator + hardware with --include-hardware),
+	// submits the same Circuit body across all of them under a
+	// shared `qcc.io/experiment` label, then prints a comparison
+	// table once they all reach a terminal phase.  This is the
+	// platform's empirical cross-substrate evaluation primitive —
+	// see `QCC-Design-State.md` decision-log 2026-05-17 (evening,
+	// third pass) for the scope rationale.
+	performanceTest   bool
+	perfTestIncludeHW bool
 }
 
 func newRunCmd(version string) *cobra.Command {
@@ -70,7 +80,9 @@ func newRunCmd(version string) *cobra.Command {
   qcc run bell.qasm --backend ibm_sherbrooke --timeout 30m
   qcc run bell.qasm --backend ibm-fez --detach           # submit + exit; check with qcc get
   qcc run vqe.py --algorithm vqe-h2 --version v2         # group with other vqe-h2 runs
-  qcc run vqe.py --algorithm vqe-h2 --experiment noise-survey --label team=hpc`,
+  qcc run vqe.py --algorithm vqe-h2 --experiment noise-survey --label team=hpc
+  qcc run shor.py --performance-test --algorithm shor    # ladder across every simulator
+  qcc run shor.py --performance-test --include-hardware  # add IBM real-hardware QPUs too`,
 		Args: argsWithHelp(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCircuit(cmd.Context(), version, args[0], o)
@@ -116,10 +128,27 @@ func newRunCmd(version string) *cobra.Command {
 		"Additional label in key=value form (repeatable).  Escape hatch for "+
 			"non-canonical labels; canonical algorithm grouping should use "+
 			"--algorithm / --version / --experiment instead.")
+	// Performance-test mode: cross-substrate ladder for one Circuit
+	// body, sharing a `qcc.io/experiment` label so the Grafana
+	// dashboard groups the runs automatically.  See the
+	// QCC-Design-State decision log for the scope rationale.
+	cmd.Flags().BoolVar(&o.performanceTest, "performance-test", false,
+		"Submit the same Circuit across all simulator QPUs with a shared "+
+			"`qcc.io/experiment` label; prints a comparison table and a "+
+			"Grafana link.  Mutually exclusive with --backend / --provider "+
+			"/ --detach / --select-only.")
+	cmd.Flags().BoolVar(&o.perfTestIncludeHW, "include-hardware", false,
+		"Performance-test mode only: include real-hardware QPUs in the "+
+			"ladder.  Off by default because real-hardware credits are "+
+			"non-trivial; turn on intentionally for cross-fidelity studies.")
 	return cmd
 }
 
 func runCircuit(ctx context.Context, version, file string, o *runOpts) error {
+	if o.performanceTest {
+		return runPerformanceTest(ctx, version, file, o)
+	}
+
 	fmt.Print(render.Banner(version))
 
 	loadStart := time.Now()

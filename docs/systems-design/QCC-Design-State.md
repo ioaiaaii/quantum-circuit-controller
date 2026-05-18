@@ -73,8 +73,10 @@ The five-move accuracy chain executed end-to-end, plus the OpenTelemetry instrum
 
 | Item | Status |
 |---|---|
-| **Move 5 simple scoring** (predicted error budget = `errorMedians.twoQubit × transpile.twoQubitGates`); writer for `selectionSummary.score`.  R3 empirical-evidence path under Path D+ — the lighter formulation; the full composite formula stays 🪪 | ⏳ |
+| **`qcc run --performance-test`** — submits the same Circuit across all available simulator QPUs with a shared `qcc.io/experiment` label, prints comparison table, dashboards auto-group via `$algorithm` (`$experiment` cascade is a small dashboard follow-up).  Honest MSc-scope R3 evidence: the platform's empirical-evaluation primitive, exercisable on any user circuit.  Shipped 2026-05-18 morning; verified on Bell + Shor against the 9-simulator catalog — Heron r2 vs Eagle r3 gate-count + outcome-cleanliness deltas visible in the Ch7 figure. | ✅ |
+| Move 5 simple scoring (predicted error budget formula) — design described in §5; implementation moves to Ch9 future work alongside the variants below | 🪪 |
 | Full Moves 2–4 + composite scoring (parallel calibrate, transpile per candidate, `mapomatic` layout, fidelity × freshness × queue weighting) | 🪪 |
+| Fake-twin empirical scoring (per-candidate run on calibration-faithful proxy, Hellinger vs `aer-statevector` ideal, pick best) | 🪪 |
 | Per-`QPU` calibration cache (TTL ≈ 60 s) — only matters under load; thesis-scale runs don't stress it | 🪪 |
 | OpenTelemetry traces — W3C Trace Context auto-propagation via `otelgrpc`; cross-boundary propagation through gRPC | 🪪 |
 | Prometheus metrics — `qcc_*` namespace (8 Circuit + 6 QPU metrics; full inventory in `QCC-Observability.md` §5) | ✅ |
@@ -84,7 +86,8 @@ The five-move accuracy chain executed end-to-end, plus the OpenTelemetry instrum
 | Algorithm-grouping label convention (`qcc.io/algorithm`, `…-version`, `…experiment`, `…run-index`, `…source-sha256`) + controller auto-fill + metric propagation | ✅ |
 | Cross-boundary identifier linkage (forward UID stamp into IBM job_tags + reverse `provider_job_id` as metric label) | ✅ |
 | `honorLabels: true` on the ServiceMonitor so `namespace` reflects Circuit's namespace, not Collector's | ✅ |
-| `qcc.*` semantic conventions documented (L0–L4 Kanazawa pyramid mapped) | ◐ |
+| `qcc.*` semantic conventions documented (L0–L4 Kanazawa pyramid mapped, full schema in `QCC-Observability.md` §4.2 + §5).  Schema design IS the thesis contribution. | ✅ |
+| OTEP submission of the `qcc.*` schema to the OpenTelemetry community (formal RFC process at `open-telemetry/oteps`).  Months of community engagement; explicit Ch9 future-work item. | 🪪 |
 
 ### M2.5 — Composition Principle realization + outcome quality
 
@@ -98,7 +101,7 @@ Lands the Tier 2 per-stage passthrough that makes the §7a Composition Principle
 | Proto carrier: `google.protobuf.Struct transpile_options` / `execute_options` on `TaskSpec`; CRD uses `+kubebuilder:pruning:PreserveUnknownFields` (`x-kubernetes-preserve-unknown-fields: true`) | ✅ |
 | Wire-boundary subtleties: whole-number-float → int coercion on protobuf Struct's `NumberValue`; Tier-1 leakage into Tier-2 stripped with warning | ✅ |
 | Sample CRs: `bell-state-seeded` (reproducibility on `aer-statevector`) + `bell-state-sabre` (non-seed kwargs on `fake-brisbane`) | ✅ |
-| Multi-register `_extract_counts` (Teleport's `crz`/`crx`/`result`); today returns first register only | ⏳ |
+| Multi-register `_extract_counts` (Teleport's `crz`/`crx`/`result`); today returns first register only.  **Path D+ decision** (2026-05-17 evening, second pass): dropped from thesis scope — the current example set (Bell, Deutsch, GHZ, Shor N=15) is single-register; VQE doesn't need multi-register either (multiple Pauli-basis circuits each have one register).  Becomes Ch9 future work alongside Teleport demos. | 🪪 |
 | Outcome-quality metrics: Hellinger fidelity vs ideal, TVD against `aer-statevector` reference.  **Path D+ decision**: dropped — `aer-statevector` already provides an ideal reference visible against the noisy substrates in the Bell ladder figure; formalising the distance into a single number doesn't materially strengthen the Ch7 claim.  Reproducibility primitive is Tier 2's `seed` keyword on `spec.transpile` / `spec.execute`, already shipped | 🪪 |
 | Outcome-quality CLI/RPC surface for structured cross-substrate comparison (ideal / fake / real ladder) | 🪪 |
 
@@ -145,24 +148,32 @@ Scope is **Path D+** (see 2026-05-17 evening decision-log entry): all `🪪` ite
 |---|---:|---:|---:|---|
 | M1 — local prototype on Aer | 12 | 12 | **100%** | |
 | M1.5 — fake backends + observability scaffolding | 10 | 10 | **100%** | |
-| M2 — selection chain + observability | 6.5 | 8 | **81%** | Observability fully ✅; only **simple Move 5 scoring** + the `selectionSummary.score` writer remain (~2 days).  Full Moves 2–4 + composite formula + cal cache + OTel traces all → 🪪 |
-| M2.5 — Composition Principle + outcome quality | 6 | 7 | **86%** | Tier 1+2 ✅; only **multi-register `_extract_counts`** remains (~1 day).  Hellinger/TVD/outcome-quality CLI all → 🪪 |
+| M2 — selection chain + observability | 8 | 8 | **100%** | Observability fully ✅ + `qcc run --performance-test` shipped 2026-05-18 morning.  Move 5 scoring + full Moves 2–4 + composite formula + fake-twin scoring + cal cache + OTel traces + OTEP submission of the `qcc.*` schema all → 🪪 (collected under Ch9 "selection-chain extensions" and Ch9 OTel-ecosystem-engagement items). |
+| M2.5 — Composition Principle + outcome quality | 6 | 6 | **100%** | Tier 1+2 ✅.  Multi-register `_extract_counts` + Hellinger/TVD/outcome-CLI all → 🪪 (current example set is single-register; VQE wouldn't need it either) |
 | M3 — real-hardware path | 11 | 11 | **100%** | Async path + IBM Heron r2 verified.  `QiskitProviderAdapter` generic + VQE worked example + dedicated queue-position field all → 🪪 |
 | M4 — packaging + polish | — | — | **🪪** | Entire milestone post-thesis |
-| **Total (thesis-critical, Path D+)** | **45.5** | **48** | **95%** | |
+| **Total (thesis-critical, Path D+)** | **47** | **47** | **100%** | |
 
-**Remaining 5% is two named items, ~3 days of code:**
+**Thesis-critical code is complete.**  The only outstanding work for the thesis is **writing Ch6 / Ch7 / Ch8 / Ch9** (~2–3 weeks).
 
-1. **Move 5 simple scoring** (predicted error budget = 2Q error × 2Q gate count; populates `selectionSummary.score`) — gates R3 empirical evidence.  ~2 days.
-2. **Multi-register `_extract_counts`** — unblocks Teleport-style multi-register demos if needed for Ch7 figures.  ~1 day.
+#### Verified 2026-05-18 morning — `qcc run --performance-test` end-to-end
 
-After those, the only remaining thesis work is **writing Ch6 / Ch7 / Ch8 / Ch9** (~2–3 weeks).
+- Bell ladder across 9 simulator QPUs: ideal `aer-statevector` 50/50 (528:496); Heron r2 fakes clean; `fake-kyoto` dramatically noisy (282/250 + 543 off-diagonal) — that's the cross-substrate quality signal visible at a glance.
+- Shor N=15 ladder same catalog: Heron r2 routes with **~28% fewer total gates** (8202 vs 10504 on Eagle r3) and produces **~27% taller top outcomes** (95 vs 75) — closes the Ch1 motivation circle empirically.
+- Validation: `--performance-test` correctly rejects `--backend` / `--provider` / `--detach` / `--select-only` combinations.
+- Falcon `fake-belem` correctly returns `TranspilationFailed` (5 qubits < Shor's required) — selection-eligibility guardrails working.
+
+#### Dashboard `$experiment` cascade — shipped same session
+
+The `--performance-test` CLI surfaces a Grafana deep link `…?var-algorithm=…&var-experiment=…`.  Added the `$experiment` template variable to `qcc-circuit-dashboard.yaml` (cascades: `algorithm → experiment → circuit`, all multi-select with "All" default).  The deep link now fully resolves to a filtered view; users can also flip between perf-test runs from the dropdowns directly.
 
 When refreshing this table after a slice: update the per-milestone "Done" column, recompute the total, and add a one-line entry to the decision log noting *what slice moved which counter*.  Don't change the denominators without a separate scope decision documented in the log.
 
 ### Explicit non-goals (do not revisit without thesis-scope check)
 
-❌ Multi-tenancy · ❌ multiple adapter implementations beyond the three named · ❌ error mitigation, circuit cutting, qubit reuse · ❌ near-time HPC interconnects (Phase 2/3 territory) · ❌ hardware multi-programming · ❌ pulse-level engineering / QEC · ❌ security as a contribution (inherited only) · ❌ OTEP submission of `qcc.*` schema (offered as candidate, not claimed)
+❌ Multi-tenancy · ❌ multiple adapter implementations beyond the three named · ❌ error mitigation, circuit cutting, qubit reuse · ❌ near-time HPC interconnects (Phase 2/3 territory) · ❌ hardware multi-programming · ❌ pulse-level engineering / QEC · ❌ security as a contribution (inherited only)
+
+**Note**: the OTEP submission of the `qcc.*` schema was previously listed here as a ❌ non-goal but is more honestly a 🪪 *post-thesis* item — the schema design is the thesis contribution and is done; the formal community engagement to submit it as an OpenTelemetry Enhancement Proposal is Ch9 future work, not "never going to happen."  Tracked alongside the other 🪪 items in the M-tables above.
 
 ---
 
@@ -221,19 +232,9 @@ Applied a Bell circuit to drive phase transitions; the counter recorded `qcc_cir
 
 The user's framing for the separation: **application metrics (M2, shipped) answer thesis questions; QCC-internals observability is operational health and should be tackled as its own focused work later**.  This is the right scoping — `controller_runtime_*` belongs in production dashboards, not Ch7 figures.
 
-**Files touched**:
+Files touched span `go.mod` (OTel SDK + OTLP exporters + semconv v1.40), the new `internal/observability/{config,resource,otel}.go` orchestrator + `metrics/{provider,qpu,circuit,events}.go` collectors + `traces/provider.go` skeleton + `logs/provider.go` placeholder, plus `cmd/qcc-controller/main.go` (slog + Setup wiring), `internal/controller/circuit_controller.go` (defer-based phase-transition recording), the IBM adapter (`circuit_uid` job-tag stamp), and `config/manager/manager.yaml` (OTEL env + downward API).
 
-- `go.mod` / `go.sum` — added `go.opentelemetry.io/otel/{,metric,sdk,sdk/metric,sdk/trace,trace,exporters/otlp/otlpmetric/otlpmetricgrpc,exporters/otlp/otlptrace/otlptracegrpc,semconv/v1.40.0}`
-- NEW: `internal/observability/{config,resource,otel}.go`, `internal/observability/metrics/{provider,qpu,circuit,events}.go`, `internal/observability/traces/provider.go`, `internal/observability/logs/provider.go`
-- `cmd/qcc-controller/main.go` — slog setup, observability.Setup wiring, deferred shutdown, Register* calls
-- `internal/controller/circuit_controller.go` — defer-based phase-transition recording + two helpers (`latestConditionTime`, `latestConditionReason`)
-- `qcc-executor/src/qcc_executor/adapters/{base.py,aer.py,ibm.py}` — `circuit_uid` parameter on `submit()`; IBM adapter stamps the job_tag
-- `qcc-executor/src/qcc_executor/servicer.py` — `_circuit_uid_from_idempotency` helper; passes UID through to `adapter.submit`
-- `config/manager/manager.yaml` — OTEL env vars + K8s downward-API
-- `config/default/kustomization.yaml`, `config/prometheus/kustomization.yaml` — controller-runtime built-in scraping deferred (commented out, scaffold preserved)
-- `docs/systems-design/QCC-Observability.md` — Layer 1/2/3/4/5 stratification, §12.5 marked deferred, §3 push-then-scrape architecture diagram refreshed
-
-**What's still ahead in M2 / coming next**: Grafana dashboard JSON (committed in `deploy/grafana/`), the Layer 2 / QCC-internals observability work (its own focused session — instrument executor, surface controller-runtime built-ins, scrape RBAC), and tracing emission flip.
+**What's still ahead in M2**: Grafana dashboards (shipped in the afternoon session below); Layer-2 / QCC-internals observability is its own focused work (controller-runtime built-ins + executor instrumentation + scrape RBAC) — Ch9 polish.
 
 ### 2026-05-17 (afternoon) · Dashboard polish + on/off-QPU decomposition + algorithm-grouping labels
 
@@ -306,6 +307,94 @@ Two visual + structural changes:
 - **Monotonic-forever `run-index`** (ConfigMap-backed atomic counter, never reuses after deletes) — production-grade; deferred.  Thesis-scale max+1-within-current-siblings is documented.
 - **Substrate-reported usage on simulators** (measuring local CPU wall-clock and surfacing it as a stand-in for `usage_seconds`) — deliberately not done.  Aer returns 0.0 so `qcc_circuit_usage_seconds` reliably means "real-hardware compute time" without a `substrate_kind` qualifier.
 
+### 2026-05-18 (mid-morning) · Doc polish pass — accuracy + shrink + diagram refresh across all four canonical docs
+
+Single focused pass to tighten the four canonical docs (`QCC-System-Design.md`, `QCC-API.md`, `QCC-Observability.md`, `QCC-Design-State.md`) ahead of writing the thesis chapters that consume them.  Four phases, summarised below.
+
+#### Sizes before/after
+
+| Doc | Before | After | Δ |
+|---|---:|---:|---:|
+| `QCC-System-Design.md` | 480 | 471 | -2% (structural polish, no big cuts) |
+| `QCC-API.md` | 547 | 552 | +1% (added missing `Scheduling` phase + `Scheduled` condition) |
+| `QCC-Observability.md` | 1030 | 824 | **-20%** (§1 scope table, §3.3 USE-Q+RED-F collapsed, §12 wiring code samples → code pointers, §15 implementation-sizing removed, §14 out-of-scope tightened) |
+| `QCC-Design-State.md` | 1250 | 1014 | **-19%** (2026-05-14/15 verbose entries compressed into one table + thesis-citable findings bullets) |
+| **Total** | **3307** | **2861** | **-13.5%** (~450 lines removed) |
+
+The proposal targeted -33%; landed at -13.5%.  The shortfall is intentional — aggressive cuts on the locked-architecture spec sections (§1–§18 of Design-State, §6.x of System-Design, §5 inventory of Observability) would have lost trace links the thesis chapters will need.  Where shrinkage was conservative (System-Design, API), the win is structural correctness rather than raw line count.
+
+#### Per-doc summary
+
+**`QCC-System-Design.md`** — §9 backend-selection-model rewritten to reflect Path D+ (Move 1 ✅, Moves 2–5 🪪/Ch9, `qcc run --performance-test` as the shipped R3 evidence primitive); §6.2 pure-Python utilities prose compressed; §6.3 adapter table aligned (`QiskitProviderAdapter` marked 🪪 Ch9 instead of "planned post-M3"); §15 limitations + future-work paragraphs tightened; §17 thesis-safe summary split from one mega-paragraph into three readable paragraphs ("What QCC is / What QCC is not / Positioning").
+
+**`QCC-API.md`** — §3.5 status fields refreshed (`traceId` description corrected — it's reserved-not-populated under Path D+, not "set by controller on first reconcile" as previously claimed); §4.1 QPU resource purpose updated (Moves 2–5 → Ch9, perf-test as shipped R3 evidence); §4.5 QPU status fields — removed stale "M2 will run a TTL refresh" claims; §5.1 phases table + state-machine mermaid + §5.2 conditions table all now include `Scheduling` / `Scheduled` (which had been missing despite `mode=schedule` shipping).
+
+**`QCC-Observability.md`** — top status line trimmed (no more "as of 2026-05-17 (morning)"); §1 scope rewritten from 5 verbose layered bullet-lists to a single layer-status table with ✅/🪪 markers; §2.1 question→signal table footer "Note" rewritten because the per-Circuit vs aggregate split has softened with the new persistent-gauge metric; §3.3 USE-Q+RED-F collapsed from 5 subsections (3.3.1–3.3.5) to 2 (USE-Q + RED-F as compact tables; Match-Quality as a forward-pointer paragraph); §4.7.1 quantum-vs-Prometheus-histogram table compressed; §4.9 disallowed-labels section now correctly notes that `provider_job_id` IS allowed (the §6 reverse-linkage anchor) under the info-metric exception; §6 cross-boundary linkage already restructured around bidirectional flow (forward UID stamp + reverse provider_job_id label) from the prior pass; §10.3 PromQL refreshed; §11 dashboards reality-check done (Bell ladder figures from `--performance-test` verified 2026-05-18 morning); §12 wiring code samples (~150 lines) replaced with pointers at the actual code files + 5-line summaries; §12.7 "Files to add/touch" stale pre-implementation table removed entirely; §15 "Implementation sizing" stale pre-implementation table removed entirely.
+
+**`QCC-Design-State.md`** — top header date refreshed; §5 Five-Move Chain now carries a Path D+ implementation-status disclaimer ("Move 1 ✅; Moves 2–5 🪪 Ch9"); M4 reclassified `⏳→🪪` with rationale paragraph; new `🪪 post-thesis` marker added to the 5-state legend (✅ ◐ ⏳ 🪪 ❌); all 41 status cells in M-tables normalised from `✓` to `✅` for visual consistency with `🪪`; OTEP submission reframed (schema design ✅ as thesis contribution; OTEP submission 🪪 as Ch9 ecosystem-engagement work) per 2026-05-17 conversation; **the 2026-05-14 + 2026-05-15 decision-log entries (~260 lines spanning 8 entries) compressed into a single 2026-05-14→2026-05-15 summary table + thesis-citable findings bullet list** — original detail is recoverable from git history, the summary captures the M1.5 work that's now fully reflected in the Roadmap M1.5 table.
+
+#### Where to pick up
+
+The Landscape view in `QCC-Design-State.md` ("§ Landscape view — % complete (thesis-critical scope, Path D+)") is the single "where am I" reference.  Current standing: **47/47 = 100% thesis-critical**.  Next phase is writing Ch6 / Ch7 / Ch8 / Ch9 — the polished docs are the engineering source-of-truth those chapters distil from.
+
+Suggested chapter-writing order: Ch6 (Architecture, drawing from `QCC-System-Design.md` + `QCC-API.md`) → Ch7 (Implementation + Evaluation, anchored by the Bell + Shor `--performance-test` figures from 2026-05-18 morning) → Ch8 (Discussion, including Path D+ scope-honesty argument) → Ch9 (Future work, the 🪪 bundle organised as "selection-chain extensions" + "ecosystem engagement").
+
+### 2026-05-18 (morning) · `qcc run --performance-test` shipped + verified — thesis-critical code complete
+
+The R3 evidence primitive landed cleanly.  Single focused session (~2h): new file `cmd/qcc/commands/perftest.go` + 4 flag/dispatch lines in `run.go`, pure CLI work, zero proto / controller / executor changes.
+
+**Implementation**:
+
+- `--performance-test` discovers `Available` QPUs via the K8s API, default-filters to `spec.kind=simulator`; `--include-hardware` extends to real-hardware too.
+- Auto-generates `qcc.io/experiment=perf-test-YYYYMMDD-HHMMSS` when the user doesn't pass `--experiment`.
+- Auto-defaults `qcc.io/algorithm` to the filename basename (lowercase, hyphenated) when the user doesn't pass `--algorithm`, so the Grafana `$algorithm` filter always has something to group by.
+- Validation rejects `--performance-test` + `{--backend, --provider, --detach, --select-only}` combinations before any network call.
+- One Circuit per candidate submitted sequentially (cheap), per-Circuit goroutines poll to terminal in parallel, completion lines stream to the CLI as runs finish.
+- Comparison table at the end: `BACKEND / PHASE / DEPTH / 1Q / 2Q / TOTAL / TOP OUTCOMES / TIME / JOB`.  Failed Circuits render `FAILED · <reason>` instead of empty cells — the comparison stays informative even on partial success.
+- Grafana deep link path `?var-algorithm=<X>&var-experiment=<Y>` so the user can jump straight to the Circuit dashboard with the filters applied.
+
+**Verification artifacts** (both came out as one-shot first runs):
+
+- **Bell ladder** (9 candidates, 1024 shots each): aer-statevector ideal 528:496, Heron r2 fakes clean ~17 off-diagonal, `fake-kyoto` outlier with 543 off-diagonal — that's the visible quality ladder.
+- **Shor N=15 ladder** (8 succeeded + 1 transpilation-rejected): Heron r2 routes with 8202 total gates vs Eagle r3 10504 (~28% fewer); top outcome ~95 on Heron r2 vs ~75 on Eagle r3 (~27% taller signal); Falcon `fake-belem` correctly rejected.  This is the Ch1 motivation circle closing empirically.
+
+**Scoreboard moves 97% → 99%.**  One nice-to-have dashboard follow-up remains (adding `$experiment` template variable so the perf-test deep link is fully honoured — ~5 min when next at the dashboard YAML).  Thesis-critical code is complete; the next step is **writing Ch6 / Ch7 / Ch8 / Ch9**.
+
+### 2026-05-17 (evening, third pass) · Move 5 → 🪪 / Ch9 future work; `qcc run --performance-test` replaces it as the R3 evidence primitive
+
+After a sharper scope conversation: dropped Move 5 simple scoring (and the fake-twin variant we briefly considered) to 🪪.  The thesis claim is now framed honestly as *"orchestration platform with empirical cross-substrate evaluation"* rather than *"orchestration platform with predictive backend selection."*
+
+**The new R3 evidence primitive** — `qcc run <file> --performance-test`:
+
+- Discovers all simulator-class QPUs registered in the cluster
+- Submits the same Circuit (same source body) to each, with a shared auto-generated `qcc.io/experiment=perf-test-<timestamp>` label
+- Algorithm label and source-sha256 are stamped per existing auto-fill conventions
+- Waits for all to reach terminal
+- Prints a comparison table: backend × shape × top outcomes × job-id × wall-time
+- Surfaces a Grafana link with the `$algorithm` + `$experiment` filters pre-applied so the Circuit dashboard renders the comparison automatically
+
+**Why this is the better thesis story:**
+
+1. **Empirical, not predictive.**  The thesis stops claiming an analytical scorer and instead surfaces *measurement* — which is honest about what the platform actually does today and what the dashboards already visualise.
+2. **Generalises the Bell ladder.**  The Bell-state-on-three-substrates figure that already exists becomes the canonical example of what `--performance-test` produces *for any user circuit*.  M1.5c's 7 fake-* backends (Eagle r3, Heron r1+r2, Falcon) become the substrate ladder.
+3. **No new hand-tuned formula to defend.**  The examiner question "why this scoring formula?" disappears.  The thesis claim is "the platform makes substrate comparison observable", which is what was actually built.
+4. **Closes the Ch1 motivation loop without overclaiming.**  Ch7 figure becomes "Shor N=15 across the IBM-Heron-r2-faithful fake-* ladder, qualitative histogram degradation visible against the `aer-statevector` ideal."  The thesis doesn't need a number to make the point — the visual already does.
+5. **Ch9 gains a coherent extension section.**  Move 5 simple scoring, fake-twin empirical scoring, full Moves 2–4 + mapomatic + composite weighting, and QEI/QRMI integration all read as "extensions of the architecture" rather than scattered loose ends.
+
+**Pure CLI work** — no proto / controller / executor changes.  Existing infrastructure (algorithm-grouping labels, dashboards with `$algorithm`+`$experiment` filters, `qcc_circuit_result_count` etc.) provides everything needed.  ~1–2 days.
+
+**Scoreboard moves from 97% → 97%** (same denominator/numerator — one ⏳ item swapped for another of equivalent weight); but the remaining item is now ~1–2 days instead of ~2 days, and the **post-implementation defensibility is materially stronger**.
+
+**What this commits**: doc-only.  Reframes the last remaining code slice as "empirical evaluation primitive" rather than "predictive selection score."  Ch9 future-work section gains a "Selection-chain extensions" entry collecting Move 5 / mapomatic / fake-twin / QEI / VQE under a single architectural-extensions umbrella.
+
+### 2026-05-17 (evening, second pass) · Multi-register `_extract_counts` → 🪪; scoreboard 95% → 97%
+
+After a focused look at whether multi-register `_extract_counts` was actually load-bearing for the planned Ch7 figures: dropped to 🪪.  The current example set (Bell, Deutsch, GHZ, Shor N=15) is entirely single-register.  VQE — the canonical "would it need multi-register?" question — doesn't either, because VQE's measurement structure is *multiple separate circuits each with one register* (one per Pauli-basis term in the Hamiltonian decomposition), not one circuit with multiple registers.  Multi-register stays Ch9 future work alongside Teleport-style demonstrations.
+
+Remaining thesis-critical work is now **one named item, ~2 days**: Move 5 simple scoring.  Scoreboard moves to **97%**, and after Move 5 ships it will be **99%** — at which point the only remaining thesis work is writing Ch6 / Ch7 / Ch8 / Ch9.
+
+**Verification plan for Move 5** (committed in this entry so it doesn't drift): once the scoring writer lands, the verification slice is to run **Shor N=15 with auto-select** (no `backendName` in `Circuit.spec.backendSelector`) across the IBM Heron r2 catalog (`ibm-fez`, `ibm-kingston`, `ibm-marrakesh`) plus the fake-* sample set, and show the score breakdown on `Circuit.status.selectionSummary`.  This **closes the Ch1 motivation loop** — the `ibm_sherbrooke` Shor-noise diagnostic that started the thesis becomes empirically addressable: "QCC would have steered that workload to substrate X with predicted error budget 0.0Y instead of Z."
+
 ### 2026-05-17 (evening) · Path D+ thesis-scope decision — narrows remaining work to ~3 days of code
 
 After a reality-check on what an MSc thesis actually needs to defend (vs what would make a stronger artifact), reclassified a substantial portion of M2 / M2.5 / M3 to `🪪 post-thesis`.  The thesis claim is **about orchestration**, not about quantum-algorithm selection optimality or about formal cross-substrate fidelity measurement.
@@ -353,38 +442,11 @@ Current scorecard reading: 46/56 items = **82% of thesis-critical scope**.  Rema
 
 ### 2026-05-16 (night, post-Tier-2) · M2 metrics design locked (pre-implementation)
 
-Worked through the M2 observability surface in design space — explicitly *not* implementing yet.  Outcome: M2 observability is **Prometheus metrics only**, no OpenTelemetry distributed tracing.
+Design-only pivot to **Prometheus metrics + cross-boundary identifier stamp**, not OpenTelemetry distributed tracing. Implementation cost (~8–11h, two languages, multi-reconcile trace propagation) was disproportionate to thesis value: the trace would mostly show what we already know (IBM queue wait dominates by orders of magnitude). Kanazawa doesn't require OTel — the paper names a 5-layer pyramid; the substrate is open. R4's "single trace context" is satisfied by a Circuit-UID stamp on IBM `runtime_options.tags` (~1h) without SDK weight.
 
-**Why the pivot from the earlier OTel-heavy plan**:
+`QCC-Observability.md` became the canonical observability source-of-truth in this session; transitional artifacts (`M2-metrics-design.md`, `M2b-otel-tracing-plan.md`) deleted. R2/R4/R5 in `01-requirements-re-evaluation.md` reworded to drop preordained OTel framing. Kanazawa-pyramid mapping: L0 → `qcc_qpu_*`; L1 → controller-runtime built-ins; L2 → `qcc_circuits_total` + K8s Events; L3 → `Circuit.status` (substrate substitution for Kanazawa's Prefect metadata); L4 → outcome-quality (M2.5).
 
-- Initial M2.b plan assumed OTel + W3C trace context + Jaeger as the canonical observability substrate.  Pressure-tested it for thesis value and found: the implementation cost (~8–11h, two languages, multi-reconcile trace-propagation design problem) was disproportionate to the operational utility (the trace would mostly show what we already know — IBM queue wait dominates by orders of magnitude).
-- The user's intuition for "what observability looks like" was the **circuit timeline** (`qiskit.visualization.timeline_drawer`), not OTel span trees.  That timeline already shipped in M1.5e (`mode=schedule` + `ScheduleCircuit` RPC + ASCII renderer).  The quantum-execution-domain visualization — which IS thesis-distinctive — is already done.
-- Cardinality concerns about a `circuit` label on Prometheus metrics turned out to be production-SaaS-scale orthodoxy applied incorrectly to thesis scale (~hundreds of Circuits total, ~few hundred active series).  Pure label addition is fine and avoids the entire correlation-ID propagation tower I'd been proposing.
-- Kanazawa et al. **do not endorse OTel** — the paper doesn't mention OpenTelemetry, distributed tracing, or correlated logging.  The "OTel + W3C + Prometheus" framing in R2's original wording was a thesis-side projection, not a Kanazawa requirement.  Kanazawa names a 5-layer pyramid (L0 hardware / L1 system / L2 job / L3 task / L4 domain); the *substrate* implementing it is open.
-- R4's "single trace context propagates across the classical–quantum boundary" can be satisfied by a **cross-boundary identifier stamp** (Circuit UID in IBM `runtime_options.tags`) — a ~1h add — without distributed-tracing SDK weight.
-
-**What landed (design only, no code)**:
-
-- **`QCC-Observability.md` — rewritten as the canonical observability source-of-truth.**  Absorbs the M2 metric design + idiomatic principles + wiring + PromQL patterns + dashboards + evaluation mapping into the existing observability document.  15 sections, single-doc coherence, no parallel/competing artifacts.  12 QCC-specific metrics (6 QPU + 6 Circuit) plus controller-runtime freebies.  Documents the two-pattern split (KSM-style gauges for resource state; controller-runtime-style counters for events), naming / labelling / cardinality / bucket conventions, info-metric and condition patterns, controller-only scope, PromQL query patterns, and the cross-boundary identifier-linkage approach replacing OTel tracing.
-- **Deleted `M2b-otel-tracing-plan.md` and `M2-metrics-design.md`** — superseded.  The M2-metrics-design.md was a transitional artifact; after the design landed it was migrated into Observability.md (the single source of truth), per user direction "use QCC-Observability.md as source of truth for observability story."
-- **R2 and R4 rewordings in `01-requirements-re-evaluation.md`** — R2 dropped the "OpenTelemetry, W3C Trace Context" preordination, retains "Prometheus-compatible exposition + Kanazawa L0–L3 coverage."  R4 reframed from "single OTel trace context" to "single stable identifier (Circuit UID) propagating via gRPC metadata + IBM `runtime_options.tags`."  R5 dropped "OTel spans" wording from acceptance criterion (selection record now lives on `Circuit.status.selectionSummary` + Events + metrics).
-- **`QCC-System-Design.md` §11 (observability model)** updated to point at the new canonical Observability doc and to explicitly name the no-OTel decision.
-
-**The Kanazawa-pyramid mapping for QCC's revised stack**:
-
-- L0 hardware → `qcc_qpu_*` node-exporter metrics (Seelam-aligned)
-- L1 system → controller-runtime built-in process metrics + reconciler metrics
-- L2 job → `qcc_circuits_total` counter + K8s Events on Circuit CRD
-- L3 task → `Circuit.status` itself (per-task records on the CRD, queryable via `kubectl get`)
-- L4 domain → out of scope today; M2.5 outcome-quality work (Hellinger fidelity, TVD) when it lands
-
-L3-as-CRD-status mirrors Kanazawa's L3-as-Prefect-metadata: same architectural pattern, different K8s-native substrate.  That's the thesis-distinctive piece — same observability framework, demonstrably implementable on cloud-native primitives.
-
-**R2 wording revision queued** for `01-requirements-re-evaluation.md`: drop the "OpenTelemetry + W3C Trace Context" requirement (it was preordained without design grounding); keep "Prometheus-compatible exposition + Kanazawa L0–L3 coverage."  The substrate substitution (K8s + Prometheus + CRDs in place of Prefect + Superset) is what we're claiming.
-
-**Next session**: implement M2 metrics following `M2-metrics-design.md`.  Build QPU `_info` collector first (exercises the whole wiring path), then add the rest one collector at a time.  After metrics land, add the cross-boundary ID stamp (~1h).  Then M2.a (selection scoring) becomes the remaining M2 work.
-
-**Files touched**: `docs/systems-design/M2-metrics-design.md` (new); `docs/systems-design/M2b-otel-tracing-plan.md` (deleted).
+Implementation followed in the 2026-05-17 entries below.
 
 ### 2026-05-16 (night) · Tier 2 per-stage passthrough shipped end-to-end
 
@@ -410,31 +472,13 @@ The Composition Principle's Tier 2 (§7a) — `Circuit.spec.transpile` and `Circ
 
 **What this commits**: the §7a Composition Principle is no longer aspirational — Tier 1 *and* Tier 2 ship working code.  The architectural discipline "QCC composes upstream toolchains rather than re-implementing them" is now observable in user YAML: `Circuit.spec.execute.seed_simulator: 42` is the user reaching past QCC's vocabulary to Qiskit's, with QCC stepping aside to forward verbatim.
 
-**Files touched**: `proto/qcc/executor/v1/executor.proto` (Struct fields); `gen/proto/qcc/executor/v1/*` + `qcc-executor/src/qcc_executor/proto/qcc/executor/v1/*` (regen); `api/v1alpha1/circuit_types.go` (CRD fields); `config/crd/bases/qcc.io_circuits.yaml` + deepcopy (regen); `internal/executor/client.go` (decode + forward); `qcc-executor/src/qcc_executor/adapters/{base,aer,ibm,qrmi}.py` (options-aware signatures + verbatim forwarding); `qcc-executor/src/qcc_executor/servicer.py` (Struct→dict + int-coercion + Tier-1 strip); `qcc-executor/tests/test_server.py` (reproducibility + precedence tests, async lifecycle test).
-
-**What's still ahead**: thesis-side worked examples that exercise Tier 2 — VQE H₂ end-to-end demonstrator is the obvious one (`seed_simulator` for reproducibility across ansatz iterations); multi-register `_extract_counts` support; M2 selection scoring.  Tier 2 unblocks reproducible cross-substrate comparisons in Ch7 — the ideal/fake/real ladder now produces identical counts on each rerun when seeds are set.
+**What's still ahead**: VQE H₂ as a worked example exercising `seed_simulator` reproducibility (later moved to 🪪 Ch9 by the Path D+ decision); multi-register `_extract_counts` (also 🪪 Ch9). Tier 2 unblocks reproducible cross-substrate comparisons — the ideal/fake/real ladder produces identical counts on each rerun when seeds are set.
 
 ### 2026-05-16 (late+++) · `QCC-System-Design.md` aligned with post-yesterday direction
 
-The canonical engineering source-of-truth doc (`QCC-System-Design.md`) was 2 days stale relative to the discussions and decisions captured in this Design-State journal.  This entry records the alignment edits.
+Doc-sync pass: `QCC-System-Design.md` (canonical engineering source-of-truth) was stale relative to the post-QRMI decisions captured below. Rewrote §6 architecture diagram (vendor edge labels), §6.2 async-lifecycle rationale (Qiskit `JobV1` primary, QRMI deferred), §6.3 adapter table (`QiskitRuntimeAdapter` + optional `QiskitProviderAdapter`, no per-vendor rows), §7 component responsibilities (Aer M1 + QiskitRuntime M3), §14 constraints (Qiskit provider ecosystem; QRMI/CUDA-Q → Ch9), §15 limitations (rewritten as "Qiskit provider ecosystem integration" + "Alternative substrates (Ch9)"), §16 thesis chapter mapping (QEI → Ch9 row added), §17 thesis-safe summary positioning sentence rewritten: **QCC as the open-source K8s-native counterpart to managed proprietary quantum clouds (IBM QP, AWS Braket, Azure Quantum), sharing Qiskit's provider abstraction**; HPC counterpart = SPANK+QRMI.
 
-Updated sections, in source order:
-
-- **§6 architecture diagram** — vendor edge label updated from "IBM Quantum, Pasqal via QRMI" to the Qiskit-provider-ecosystem reach (`qiskit-ibm-runtime`, `qiskit-braket-provider` aggregating IonQ/Rigetti/IQM/AQT/QuEra).
-- **§6.2 async task-lifecycle RPCs rationale** — primary alignment is now Qiskit's `JobV1` contract (universal across provider plugins).  QRMI's `task_start/status/result` is mentioned as future-work alternative.
-- **§6.3 adapter table** — dropped `IBMAdapter` and `QRMIAdapter` rows.  Replaced with `QiskitRuntimeAdapter` (M3 primary) and optional `QiskitProviderAdapter` (generic, M3).  Vendor coverage paragraph rewritten: comes from Qiskit's `qiskit.providers.Backend` ecosystem, not per-vendor adapter code.  Pointer added to §7d (QEI direction).
-- **§7 component responsibilities** — qcc-executor row updated to reflect AerAdapter shipping today + QiskitRuntimeAdapter landing in M3.
-- **§14 constraints** — replaced "two interchangeable paths IBMAdapter+QRMIAdapter" with "`QiskitRuntimeAdapter` primary, `QiskitProviderAdapter` optional generic, both wrap the Qiskit provider ecosystem".  QRMI + CUDA-Q named as Ch9 future-work alternative substrates.
-- **§15 limitations** — vendor coverage description updated to reflect the Qiskit-provider-ecosystem reach + Ch9 future-work pointer.  The QRMI-integration paragraph rewritten as **"Qiskit provider ecosystem integration"** (the actual primary path); a new **"Alternative substrates (Ch9 future-work)"** paragraph names QRMI and CUDA-Q as deferred directions.
-- **§16 thesis chapter mapping** — replaced "QRMI integration → Chapter 6" with "Qiskit provider ecosystem integration → Chapter 6/7" and added a "QEI direction → Chapter 9 future-work" row.
-- **§17 thesis-safe summary** — the **positioning sentence** rewritten.  Old version cited QRMI as load-bearing for QCC's vendor-abstraction role (*"sharing the QRMI library for vendor abstraction"*).  New version: positions QCC as the **open-source K8s-native counterpart to managed proprietary quantum clouds** (IBM Quantum Platform, AWS Braket, Azure Quantum), sharing Qiskit's provider abstraction.  The Slurm SPANK + QRMI parallel is preserved but reframed as the HPC counterpart of QCC, not its vendor-abstraction substrate.  Adds the substrate-substitution future-work sentence pointing at Ch9.
-
-**What this commits**: doc-only.  Zero code change.  Removes the contradiction between Design-State (live journal) and System-Design (canonical truth).  Both now reflect the post-yesterday direction (Composition Principle locked, QRMI deferred to Ch9, Qiskit provider ecosystem as M3 vendor-reach mechanism, M2/M2.5/M3/M4 Roadmap split).
-
-**What still needs updating** (not done today, captured here as known staleness):
-
-- `QCC-API.md` — still references `resultRef` (deleted), `openqasm3` + `dynamicCircuits` capability examples (removed), and the `IBMAdapter` / `QRMIAdapter` provider dispatch table.  Schema-level staleness; less load-bearing for thesis prose.  Defer to a focused fix session (~30 min) when convenient.
-- `QCC-Observability.md` — mostly aligned, but does not yet incorporate the Kanazawa L0–L4 layered telemetry framework or outcome-quality metrics discussed but never landed.  Defer to M2.5 (observability implementation).
+Doc-only, zero code change. Subsequent 2026-05-17 (afternoon) polish pass updated `QCC-API.md` and `QCC-Observability.md` to match.
 
 ### 2026-05-16 (evening) · M3 async path validated end-to-end · first real-hardware Bell
 
@@ -464,9 +508,7 @@ Three observations worth recording for Ch7:
 2. **Prediction-vs-observed gap is honest and bounded.**  The CLI predicted `error exposure ≈ 0.005 events/shot (within gate-error budget)`, with the explicit caveat "excludes readout & coherence".  Adding readout (2 × 1.65e-02 ≈ 3.3%) to gate-error (0.5%) gives a predicted 3.8% off-distribution mass; observed 7.1% — within a factor of 2.  Gap is dominated by qubit-specific readout outliers (median underestimates them) plus crosstalk; both are explicitly out-of-scope for the median-based formula.  Ch7 paragraph writes itself: *"the gate-error budget was respected; the observed deviation tracks readout error, which the prediction formula explicitly excludes."*
 3. **Three-substrate side-by-side comparison is now reproducible.**  Same Bell circuit on `aer-statevector` (ideal, 513/0/0/511), `fake-marrakesh` (frozen Heron r2 snapshot, predicts ~3% off-diagonal), `ibm-kingston` (live Heron r2 hardware, observes 7.1% off-diagonal).  Three rungs of the dev → cloud-sim → real-hardware ladder, one Circuit YAML structure differentiated only by `BackendSelector`.  This is the Ch7 anchor figure.
 
-**Files touched**: `qcc-executor/src/qcc_executor/adapters/{aer,ibm}.py` (resolver dict, fetch_result fix, lazy import); `qcc-executor/src/qcc_executor/servicer.py` (async handlers + task registry); `internal/controller/{circuit_controller,qpu_controller}.go` (async dispatch + IBM provider recognition); `internal/executor/client.go` (Go-side async wrappers); `cmd/qcc/commands/{run,get}.go` (--detach flag, timeout bump, JOB column); `api/v1alpha1/qpu_types.go` (no schema change; the IBM probe path uses existing fields); `config/manager/executor.yaml` (Secret env mount); `config/qpu/{kustomization.yaml,aer-statevector.yaml}` (operator default now empty); `config/samples/qpu/{aer-statevector,ibm-fez,ibm-kingston,ibm-marrakesh}.yaml` + `kustomization.yaml`; `internal/controller/qpu_controller_test.go` (probe-driven IBM Available test) + `circuit_controller_test.go` (fakeExecutor stubs for the new interface methods).
-
-**What's still ahead in M3**: VQE H₂ end-to-end demonstrator (the Ch7 worked example).  Optional: multi-register circuit support in `_extract_counts` (Teleport-style); per-job seed for reproducible simulator comparisons (the Tier 2 `execute` passthrough work, Session 2.5).
+**What's still ahead in M3**: VQE H₂ worked example, multi-register `_extract_counts` (Teleport-style). Both later moved to 🪪 Ch9 by the Path D+ decision (2026-05-17 evening).
 
 ### 2026-05-16 (late++) · §7a corrections + Roadmap restructure (M2 / M3 / M4)
 
@@ -547,268 +589,32 @@ Two consequences worth flagging:
 
 **Implementation plan.**  Tier 1 already exists.  Tier 2 passthrough blocks ship as part of M1.5 polish or M2 foundation, depending on cadence — strictly additive (new optional fields with `x-kubernetes-preserve-unknown-fields`), no existing Circuit/QPU breaks.  Companion cleanup: three dead fields identified in the same session's audit (`QPU.spec.capabilities.openqasm3`, `QPU.spec.capabilities.dynamicCircuits`, `Circuit.status.resultRef`) to be removed in a small follow-up patch.
 
-### 2026-05-15 (evening) · `mode=schedule` + `ScheduleCircuit` RPC + ASCII timeline renderer
+### 2026-05-14 → 2026-05-15 · M1 + M1.5 sub-milestones (compressed)
 
-Closes the originally-deferred Phase 4 from the morning's results-output work — the user "really liked the timeline_drawer" reference, and the new `exec time` row needed a way to show the actual per-instruction schedule behind that single µs number.  Pass 1 scope (ASCII summary, K8s-native).
+The M1 / M1.5 work is fully reflected in the Roadmap table above and the locked-architecture sections below. The detailed per-entry decision logs from 2026-05-14 and 2026-05-15 are compressed here into one-line summaries; the *thesis-citable empirical findings* they surfaced are preserved as bullets at the end.
 
-**New invocation surface** — two entry points, one renderer:
-
-```
-qcc schedule bell-state.qasm --backend fake-sherbrooke    # build + render
-qcc get circuit <name> --schedule                         # re-read existing artifact
-```
-
-`qcc schedule` mirrors `qcc draw` exactly (load → create Circuit → watch → render → cleanup unless `--keep`).  `qcc get circuit --schedule` mirrors `--qasm`/`--draw` for the K8s-native re-read.  The shared parallel structure is intentional — the two artifact-mode commands look the same so future commands following the pattern stay readable.
-
-**End-to-end plumbing** (mirrors the existing `ProbeBackend`/`DrawCircuit` patterns; uses scheduled-transpile output, not a separate scheduler):
-
-```
-qcc CLI (schedule.go)
-  → Circuit CR with mode=schedule + spec.backendSelector
-     → controller selectBackend (Move 1, hard-constraint filter)
-        → renderSchedule(): Executor.ScheduleCircuit RPC + JSON artifact
-           → ConfigMap data["schedule.json"] (status.scheduleRef)
-              → renderSchedule(c, *executor.ScheduleResult)
-```
-
-Phase machine for `mode=schedule`: `Pending → Selecting → Scheduling → Succeeded`.  Distinct from `Transpiling/Submitting` (run path) and `Rendering` (draw path) so `kubectl get circuit` makes the mode-specific work visible.
-
-**Adapter strategy** — uses Qiskit's `transpile(qc, backend, scheduling_method='asap')` and walks `tqc.op_start_times` plus the backend's `Target` durations.  Each adapter implements one method:
-
-```python
-def schedule(self, qasm: str, target) -> CircuitSchedule:
-    # AerAdapter path: lookups via backend.target durations + dt
-    # IBMAdapter path: same helpers, real backend
-```
-
-Generic `AerSimulator` (no `Target`, no durations) returns `SchedulingUnsupported` rather than crashing the RPC.  The CLI surfaces the message directly to the user — the limitation is honest.
-
-**ASCII renderer** — three sections per output (headline + summary + timeline):
-
-```
-▸ bell-state-s2gbj · schedule · on fake_sherbrooke · 1.86 µs scheduled envelope
-
-  summary
-    duration       8384 dt  (1.86 µs)
-    cycle time     dt = 222 ps
-    ops            139 total · 14 non-idle
-    active qubits  q0, q1
-    longest gate   measure on q[0] · 1.22 µs
-
-  timeline
-    q0  rz @ 0 ns  ·  sx @ 0 ns (57 ns)  ·  ecr @ 57 ns (533 ns)  ·  …  ·  measure @ 647 ns (1.22 µs)
-    q1  rz @ 0 ns  ·  sx @ 0 ns (57 ns)  ·  rz @ 57 ns  ·  ecr @ 57 ns (533 ns)  ·  …
-```
-
-Idle `delay` instructions (the dominant op count on a 127-qubit backend) are dropped — they tell the reader nothing past what the summary's `total · non-idle` already showed.  Per-qubit lines that would exceed 12 events collapse to *first 6 · "(N more)" · last 6* so Shor's-on-Brisbane (10,555 non-idle ops across 8 of 127 qubits) still fits a terminal:
-
-```
-q123  sx @ 0 ns (60 ns)  ·  rz @ 60 ns  ·  ecr @ 60 ns (660 ns)  ·  …  ·  … (2077 more) …  ·  …  ·  measure @ 1.29 ms (1.30 µs)
-```
-
-**Thesis-citable findings** the renderer makes visible:
-
-- **`fake_sherbrooke`'s 1.86 µs Bell envelope** at `dt = 222 ps` — close to but not identical to Ch1's "9466 dt ≈ 1.89 µs" (that was a Deutsch circuit on real Sherbrooke; Bell on the FakeSherbrooke snapshot is shorter).  The Ch1 anchor *"the schedule wall-clock is ~1.89 µs"* can now be cross-referenced against system data.
-- **Brisbane's 2.08 µs Bell envelope** at `dt = 500 ps` — different physical sample rate, but the schedule is *shorter in dt cycles* (4160 vs 8384) because Brisbane's per-instruction wall durations dominate at this dt resolution.  The two backends in side-by-side mode visualise the Ch1 *"same Bell, different scheduled envelope"* finding.
-- **Shor's-on-Brisbane lands at ~1.30 ms** — the controller's exec-time estimate (`depth × max(1Q_dur, 2Q_dur) = ~4.30 ms`) overshot because it didn't account for op parallelism across qubits.  The schedule is the ground truth and exposes the gap.  Move 5 scoring in M2 can use either, but the schedule is the better estimate where coherence budget matters.
-
-**Pass 2 (matplotlib PNG via `timeline_drawer`) deferred.**  Pass 1 establishes the plumbing; PNG is a base64-into-ConfigMap addition that doesn't change the architecture.  Add it when a thesis figure needs the high-fidelity rendering.
-
-**Files**: `proto/qcc/executor/v1/executor.proto` (rpc + 2 new messages); `qcc-executor/src/qcc_executor/adapters/{base,aer,ibm}.py` (`CircuitSchedule`, `ScheduledOp`, `schedule()` impl, `_processor_identity` helper, `_backend_has_durations`, `_instruction_duration_dt`); `qcc-executor/src/qcc_executor/servicer.py` (`ScheduleCircuit` handler); `api/v1alpha1/circuit_types.go` (`ModeSchedule`, `PhaseScheduling`, `ConditionScheduled`, three new Reason* constants, `ScheduleRef`, `ArtifactSuffixSchedule`, `ArtifactDataKeySchedule`); `internal/executor/client.go` (`ScheduleCircuit` method, `ScheduleResult`, `ScheduledOp`); `internal/controller/circuit_controller.go` (`renderSchedule` handler, phase dispatch, Executor interface extension); `cmd/qcc/commands/schedule.go` (new — entire `qcc schedule` command + ASCII renderer); `cmd/qcc/commands/get.go` (`--schedule` flag, `printScheduleArtifact`, schedule-mode message in `noArtifactMessage`, schedule hint in `printArtifactHints`); `cmd/qcc/commands/root.go` (register `newScheduleCmd`); `internal/controller/circuit_controller_test.go` (extend `fakeExecutor` with `ScheduleCircuit`).
-
-### 2026-05-15 (PM) · `processor_family` probe + sectioned `qcc get qpu` + comparison list view
-
-Closing the same-day loop on the result-output work: the chip-generation labels (Eagle r3 / Heron r2 / Falcon r4) used in the morning's discussion came from author intuition, not system data. Plumbed `backend.processor_type` end-to-end so those labels are real CRD fields.
-
-**New plumbing path** (mirrors the existing `ErrorMedians` / `CoherenceMedians` / `InstructionDurationMedians` pattern):
-
-```
-backend.processor_type → BackendMetadata.processor_{family,revision,segment}
-  → ProbeBackendResponse fields 16/17/18
-  → BackendProfile.Processor{Family,Revision,Segment}
-  → QPU.status.processor (new QPUProcessor sub-struct, nil when absent)
-```
-
-Two annoyances normalised at the wire boundary: Qiskit reports `revision` as int OR string across families, and Falcon adds an optional `segment` field other families don't have. Proto wire type is `string` for revision; controller never sees the mismatch.
-
-**View overhaul** (`cmd/qcc/commands/get.go`):
-
-1. **`qcc get qpu <name>` restructured** from three stacked `KV` blocks to the same headline+sections shape as `qcc get circuit`: `identity / calibration / gate errors / coherence / timing`. Headline reads `✓ fake-marrakesh · 156q Heron r2 · 352 edges · Available · calibrated 15 mo ago`. New `timing` section shows `dt (control-electronics sample period) · 1Q duration (median) · 2Q duration (median)`. Generic Aer degrades to headline + identity only.
-
-2. **`qcc get qpu` list view replaced** (backwards-incompatible). Old: `NAME · PROVIDER · KIND · QUBITS · AVAILABLE · AGE`. New: `NAME · AVAILABLE · PROCESSOR · QUBITS · 2Q ERR · T1 · DT · CALIBRATED`. PROVIDER/KIND were degenerate across the fake-* set (all `local`/`simulator`); AGE was CR-creation, not calibration freshness — both replaced with axes that actually compare. User explicitly chose default-enriched over `-o wide` flag.
-
-**Findings worth Ch5/Ch7 citations** — visible at-a-glance in the new list view:
-
-- **`fake-kyoto` ships with `2Q ERR = 1.00e+00`** in Qiskit's frozen snapshot. Not a probe bug — a corrupted ECR entry in the FakeKyoto calibration. Good example for the observability chapter: *the observability layer surfaces bad data rather than hiding it*. The em-dash sentinel applies only to missing data; bad data we render as-is.
-- **Sherbrooke is the only `dt = 222 ps` backend** in the fake-* set (Brisbane/Osaka/Kyoto all `500 ps`). The Ch1 *"9466 dt ≈ 1.89 µs"* is therefore Sherbrooke-specific — the list view makes this visible without anyone having to remember.
-- **Heron's 2Q duration is 10× shorter than Eagle's** (~68 ns vs ~660 ns). Visible side-by-side in the `timing` section of `qcc get qpu fake-marrakesh` vs `fake-brisbane`. That's the CZ-on-Heron vs ECR-on-Eagle architectural advantage, citable from system data.
-
-Re-probe was forced via `kubectl patch qpu <name> --subresource=status --type=json -p='[{"op":"replace","path":"/status/qubits","value":0}]'` per backend. M2's TTL-driven refresh removes the manual step.
-
-The `processor_family` CRD field is now real but Move 1 doesn't read it yet — M2 selection can prefer Heron over Eagle for short-2Q-circuits once the scoring lands.
-
-### 2026-05-15 (PM) · Results-output honesty pass + `dt`/duration plumbing + sectioned circuit layout
-
-Driven by the user's direct catch on the morning's "expected err" framing — *"is the formula of prediction correct? feel kinda delusional about this"*. It wasn't, quite.
-
-**Honesty pass on the formula** — the linear sum `1Q_count × e_1Q + 2Q_count × e_2Q` was labelled "expected err" and read as a probability. It isn't: once the sum exceeds 1 it has no per-shot-rate meaning. Two-part fix in `cmd/qcc/commands/get.go`:
-
-1. **Renamed to `error exposure`** with units *events/shot*. Regime labels rewritten: *within gate-error budget* / *under pressure* / *exceeded* / *severe*.
-2. **Added a fidelity-bound row** using `P(no gate error) ≈ exp(-exposure)` (Poisson approximation). That number *is* a probability and is the closest "fidelity" the available inputs can produce. Row reads `fidelity bound  P(no gate error) ≈ <value>  (excludes readout & coherence)` — both the bound nature and the missing terms are visible in the output, not buried.
-
-`errorExposure` doc comment now documents what the metric *is* (regime indicator), *isn't* (probability, fidelity), what's missing (readout, coherence, layout), and intended use (Move 5 fast-reject in M2). Thesis can cite the row without overclaiming. On Shor's-on-Brisbane this now reads `error exposure ≈ 16 events/shot (severe — gate-error budget exceeded)` and `fidelity bound  P(no gate error) ≈ 1.4e-07`, both of which make the uniformly-scattered histogram predictable from metadata *before* the circuit runs.
-
-**`dt` and per-instruction durations end-to-end** — `ProbeBackendResponse` gained `dt_seconds`, `single_qubit_duration_median_seconds`, `two_qubit_duration_median_seconds` (fields 13/14/15). Aer adapter populates from `backend.dt` and `target.target` durations via a new `_median_instruction_duration` helper mirroring the existing `_median_instruction_error`. CRD gained `QPUStatus.DtSeconds` and `QPUStatus.InstructionDurationMedians {SingleQubitSeconds, TwoQubitSeconds}`. CLI uses them to compute `exec time ≈ depth × max(1Q_dur, 2Q_dur)` — Bell on Brisbane lands at `~5.28 µs`, Shor's at `~4.30 ms`. The Sherbrooke `dt = 222 ps` cited in Ch1 is exact in the snapshot.
-
-**Sectioned scientific-paper layout** — `buildCircuitSummary` restructured from flat KV table to one-line headline + four sections (`setup / backend / circuit / results`). Headline produced by `verdictFrom(exposure)` with stable thresholds (*signal preserved* ≤ 0.1, *degraded* ≤ 1, *partially lost* ≤ 5, *expected lost* > 5). Example:
-
-```
-✓ shor-7p4jp · run · on fake-brisbane · signal expected lost (error exposure ≈ 16)
-```
-
-Quotable in a figure caption. `qcc run` and `qcc get circuit` share the renderer — one source of truth, no surface drift.
-
-**Files**: `proto/qcc/executor/v1/executor.proto`, `qcc-executor/src/qcc_executor/adapters/{base,aer,ibm}.py`, `qcc-executor/src/qcc_executor/servicer.py`, `internal/executor/client.go`, `api/v1alpha1/qpu_types.go`, `internal/controller/qpu_controller.go`, `cmd/qcc/commands/get.go`.
-
-### 2026-05-15 · Result-card unified renderer + Ch1-aligned helpful details
-
-> **Superseded by the 2026-05-15 (PM) entries above** for the *expected err → error exposure* rename, the new fidelity-bound row, and the sectioned layout. The plumbing decisions below (Ch1-anchor rows, unified renderer) still apply; only the labelling and regime-language evolved.
-
-After reading the Introduction chapter end-to-end, three additional details emerged as the highest-value additions to `qcc run` / `qcc get circuit` output — each tied to a specific Ch1 finding:
-
-| Row | Ch1 anchor | What it surfaces |
+| Date | Slice | Outcome |
 |---|---|---|
-| `coherence  T1 X µs · T2 Y µs` | NISQ constraint; calibration-drift framing | Time budget of the backend |
-| `calibrated  YYYY-MM-DD (N mo ago)` | Calibration-drift motivation | Reproducibility timestamp |
-| `expected err  ≈ N err/shot  (regime label)` | Brisbane-vs-Sherbrooke counterintuitive finding | One-line failure prediction |
+| 2026-05-14 | **Selection-chain split** | Move 1 controller-side (operates on K8s `QPU` resources); Moves 2–5 executor-side (Qiskit/SDK access). Documented in `QCC-System-Design.md` §9. Path D+ moved Moves 2–5 to 🪪 Ch9. |
+| 2026-05-14 | **M1.5a** — `fake_*` execution | `AerAdapter._resolve_local_backend` routes `fake_*` names through `FakeProviderForBackendV2`; same-circuit ladder produces visibly noisier histograms than generic Aer (6.3% off-diagonal on Bell). |
+| 2026-05-14 | **M1.5b** — `ProbeBackend` RPC | Read-only backend introspection (qubits, basis, coupling, calibration timestamp, error medians, T1/T2, dt, durations, `processor_type`). `QPU.status` becomes the source-of-truth; `spec.qubits` becomes a hint. `crd:allowDangerousTypes=true` so error medians can ship as `float64`. |
+| 2026-05-14 | **M1.5c** — Sample-QPU bundle | 4 fake-* registered (Brisbane/Sherbrooke/Osaka — Eagle r3; Torino — Heron r1). Auto-derivation makes each YAML three lines. Reveals architecture-vs-calibration interaction (per-gate error vs total transpiled depth). |
+| 2026-05-15 | **M1.5d** — CLI kubectl-style + T1/T2 + transpile metrics | `qcc get <kind> [name]` replaces `qcc qpu`; tab-complete + missing-arg help via Cobra ergonomics; `Circuit.status.transpile` persists post-hoc; `qcc get qpu` renders T1/T2 coherence times; sample bundle grows to 7 QPUs across Eagle r3 / Heron r1+r2 / Falcon. |
+| 2026-05-15 | **Result-card honesty pass** | `expected err` renamed → `error exposure` (events/shot, not probability). Added `fidelity bound = exp(-exposure)` row. Sectioned scientific-paper layout (`setup / backend / circuit / results` + headline verdict). `dt` and per-instruction durations end-to-end. |
+| 2026-05-15 | **`processor_family` probe** | Chip-generation labels become CRD fields (`status.processor.{family,revision,segment}`). New sectioned `qcc get qpu` view with `timing` section showing `dt · 1Q duration · 2Q duration`. List view replaces PROVIDER/KIND/AGE columns with `AVAILABLE / PROCESSOR / QUBITS / 2Q ERR / T1 / DT / CALIBRATED` (axes that actually compare). |
+| 2026-05-15 (evening) | **`mode=schedule` + `ScheduleCircuit` RPC** | Per-instruction dt-cycle timeline artifact via `qiskit.compiler.transpile(scheduling_method='asap')`; new ASCII renderer; `qcc schedule <file>` + `qcc get circuit --schedule`; `status.scheduleRef` ConfigMap. Closes the originally-deferred Phase 4 from the result-card pass. |
 
-The expected-error row is the headline addition.  It computes `1Q_count × e_1Q + 2Q_count × e_2Q` from the executor-reported transpile metrics and the QPU's probed error medians.  Annotated in four regimes: *within budget* (< 0.1), *noticeable noise* (0.1–1), *approaching budget* (1–5), *severe — signal likely lost* (≥ 5).
+**Thesis-citable findings from this period:**
 
-**Empirical effect** — same circuit, two backends, two annotations that match the histograms:
+- **Calibration variance under stable architecture**: Bell on `fake-brisbane` (Eagle r3, Feb 2025) vs `fake-sherbrooke` (Eagle r3, Feb 2025) vs `fake-osaka` (Eagle r3, Feb 2024) shows 6.25% / 3.66% / 4.37% off-diagonal mass at 4096 shots — same architecture, same basis, different snapshots → different histograms. The Wilson et al. (2020) 3–304% claim, demonstrated at thesis-laptop scale.
+- **Architecture-vs-calibration interaction (the Torino paradox)**: Heron r1 `fake-torino` has half the per-2Q-gate error of Brisbane (4.19e-03 vs 7.72e-03) but 3× worse Bell histogram (18.65% vs 6.25%). Cause: CZ basis on Heron decomposes `cx` into `CZ + H-sandwich` → more native gates per logical op. Better per-gate error, worse total error. Move 5 scoring must reason about `f(per-gate error × per-gate count)`, not error alone.
+- **`fake-kyoto` ships with corrupted calibration**: 2Q ERR = 1.00 (an unparseable ECR entry in the FakeKyoto snapshot). Useful Ch6 anchor — the observability layer surfaces bad data rather than hiding it; the em-dash sentinel applies only to missing data.
+- **Heron's 2Q duration is 10× shorter than Eagle's** (~68 ns vs ~660 ns) — visible side-by-side in `qcc get qpu fake-marrakesh` vs `fake-brisbane`. The CZ-on-Heron vs ECR-on-Eagle architectural advantage, citable from system data.
+- **`fake_sherbrooke` is the only `dt = 222 ps` backend** in the catalog (Brisbane/Osaka/Kyoto all `500 ps`). Ch1's "9466 dt ≈ 1.89 µs" anchor is therefore Sherbrooke-specific — visible in the list view.
+- **Bell scheduled envelopes** (`mode=schedule`): `fake_sherbrooke` 1.86 µs (8384 dt × 222 ps); `fake_brisbane` 2.08 µs (4160 dt × 500 ps) — same Bell, different scheduled wall-clock. Cross-references Ch1's timing-data anchor against system output.
 
-```
-Bell on fake-brisbane   expected err ≈ 0.01 (within budget)   →  6% off-diagonal
-Shor's on fake-brisbane expected err ≈ 16   (signal likely lost) → uniform across 16 outcomes
-```
+Detailed prose for any of the above is recoverable from git history (commits in the 2026-05-14 / 2026-05-15 window); the M1.5 table in the Roadmap section above is the canonical "what shipped" reference.
 
-This is the one-line predictive annotation Ch7's evaluation can cite directly.  The same calculation will become the kernel of Move 5 (composite scoring) in M2 — selection refuses matches whose predicted error exceeds budget.
-
-**Plumbing fix**: routed `qcc run` and `qcc get circuit` through a single render function (`buildCircuitSummary` in get.go).  Previously the two surfaces had drifted — `qcc get` showed gate errors, `qcc run` did not.  Consolidating to one path closes the gap and gives one place to add future Ch1-derived metrics (layout fidelity, duration breakdown — M2).
-
-The deleted `buildResultBody` had a `duration` row inside the Card.  Removed because duration is already shown via the spinner's `✓ completed · 2.02s` finish line — redundant in the Card.
-
-### 2026-05-15 · M1.5d + CLI ergonomics overhaul
-
-Bundled five separate improvements that compose into the M1.5 closing pass:
-
-**1. T1/T2 coherence times through the whole stack** — `BackendMetadata` (Python) gained `t1_median_us` / `t2_median_us`; same in `BackendProfile` (Go) via the `ProbeBackend` RPC's new `t1_median_us` / `t2_median_us` fields; `QPU.status.coherenceMedians.{t1Micros,t2Micros}` carries them in the CRD; `qcc get qpu` renders them. Median over qubits, in microseconds (the unit IBM publishes). Generic Aer reports zero (no qubit_properties); fake_brisbane reports ~232 µs / 150 µs; old Belem fakes report ~78 µs / 64 µs — five years of IBM hardware progress visible in `qcc get qpus`.
-
-**2. Transpile metrics on Circuits** — new `Circuit.status.transpile.{depth,twoQubitGates,totalGates}`. The executor was already returning these in `Result`; now we persist them so `qcc get circuit` can render them post-hoc. Critical for explaining the histogram: Shor's on fake-Brisbane transpiles to *1,824 two-qubit gates*; with per-2Q error 7.72e-03, the expected total error is ~14 — which is exactly why the histogram looks uniform. The thesis Ch7 anchor narrative now has the *multiplicand* (gate count) next to the *multiplier* (per-gate error) in one Card.
-
-**3. CLI restructured to kubectl-style `qcc get <kind> [name]`** — backwards-incompatible. `qcc qpu fake-brisbane` is gone; `qcc get qpu fake-brisbane` replaces it. `qcc get qpus` and `qcc get circuits` are new list views with tabular `NAME PROVIDER KIND QUBITS AVAILABLE AGE`-style output. Plural and singular forms are interchangeable per kubectl convention. Rationale: matches the K8s-ecosystem the design state cites; one verb root (`get`) scales as we add `delete`, `list` etc.; reads naturally (`qcc get qpus`). Code-side, `cmd/qcc/commands/qpu.go` deleted; everything consolidated in `get.go` with kind-dispatching.
-
-**4. Cobra ergonomics** — `SilenceErrors: false` so unknown flags surface as `✗ flag error unknown flag: --foo` plus the command's help block (via `SetFlagErrorFunc`). Missing-arg errors fire the same help via `argsWithHelp(cobra.ExactArgs(N))`. Static `ValidArgs` on `get` enables `qcc get <TAB>` to complete to `circuit / circuits / qpu / qpus`. The built-in `qcc completion {bash,zsh,fish,powershell}` continues to emit usable shell scripts (verified: 426 / 212 / 235 lines respectively).
-
-**5. Card framing removed** — `render.Card` (rounded box) replaced by `render.Section` (borderless block). The rounded border ate terminal width, ate visual breath, and (worst) Lipgloss's width math gets confused by box-drawing Unicode in nested Qiskit text drawings — drawings could bisect the frame. Section is "title + blank line + 2-space-indented body" with breath at top and bottom. The old `Card` test was replaced with a `Section` test that asserts the *absence* of box-drawing glyphs so the bug can't regress.
-
-**Also fixed**: `--drawing` → `--draw` (the user's natural typing) and the error path now explains *why* a Circuit might lack a drawing: `"circuit X has no drawing artifact — drawings are only produced by mode=draw, and this circuit's mode is \"run\". Render it with `qcc draw <source>`."` Previously the error was the bare "no drawing artifact" string, leaving users guessing.
-
-**Sample-bundle growth (`config/samples/qpu/`)**:
-- `fake-kyoto` (Eagle r3, 127q) — fourth Eagle for thicker calibration-variance comparator set
-- `fake-marrakesh` (Heron r2, 156q) — newest IBM architecture, CZ basis, 3.29e-03 2Q error (best of the lot)
-- `fake-belem` (Falcon, 5q, 2021 calibration!) — demonstrates qubit-count affinity and shows IBM hardware progress over five years
-
-Bundle now ships 7 fake QPUs across 4 architecture generations.
-
-### 2026-05-14 · M1.5c — Four-QPU sample bundle reveals architecture-vs-calibration interaction
-
-[config/samples/qpu/](../../config/samples/qpu/) now ships `fake-brisbane`, `fake-sherbrooke`, `fake-osaka` (all Eagle r3, 127q, ECR basis) and `fake-torino` (Heron r1, 133q, CZ basis).  After M1.5b's auto-derivation each YAML is three lines (`metadata.name`, `spec.provider`, `spec.kind`); the probe fills everything else.  `kubectl apply -k config/samples/qpu/` registers the bundle; the controller probes each within 5 seconds.
-
-**Same Bell circuit at 4096 shots produced**:
-
-| Backend | Per-2Q gate error | Off-diagonal mass | Lesson |
-|---|---|---|---|
-| `fake-brisbane` (Eagle r3, Feb 2025) | 7.72e-03 | 6.25% | baseline |
-| `fake-sherbrooke` (Eagle r3, Feb 2025) | 7.79e-03 | 3.66% | calibration variance vs Brisbane |
-| `fake-osaka` (Eagle r3, **Feb 2024**) | 6.93e-03 | 4.37% | year-older snapshot |
-| `fake-torino` (Heron r1, Feb 2025) | **4.19e-03** | **18.65%** | better per-gate error → worse total |
-
-The Torino result is the interesting one and merits a thesis paragraph in Ch7.  Torino has **better per-2Q-gate error** (≈ ½ of Brisbane's) but a **3× worse Bell histogram**.  Cause: Torino uses CZ as the entangling primitive, so a `cx` gate decomposes to `CZ + H-sandwich` — more native gates per logical operation.  Per-gate error is lower; total transpiled depth is higher; net total error is higher.
-
-This is exactly the signal Move 5 (composite scoring) in M2 must reason about: `score ∝ f(per-gate error × per-gate count)`, *not* per-gate error alone.  The bundle gives the thesis the empirical anchor for that argument — reproducibly, on a laptop, with no IBM credentials.
-
-The Eagle r3 trio (Brisbane / Sherbrooke / Osaka) isolates the *calibration* axis: same architecture, same basis, different frozen snapshots → different histograms.  This is the Wilson et al. (2020) 3-304% accuracy variance claim, demonstrated at thesis-laptop scale.
-
-**Bundle layout decisions**:
-- Sub-directory `config/samples/qpu/` rather than flat `config/samples/qcc_v1alpha1_qpu_fake-*.yaml` — kustomize-clean, isolatable (`kubectl apply -k config/samples/qpu/`).
-- Parent `config/samples/kustomization.yaml` includes the sub-bundle as a kustomize resource, so `kubectl apply -k config/samples/` registers everything.
-- Dropped the now-redundant `qcc_v1alpha1_qpu_local.yaml` — `local-aer` ships by default via `config/qpu/`.
-- Kept the IBM hardware placeholder (`qcc_v1alpha1_qpu_ibm_sherbrooke.yaml`) since it documents the M2 credential shape.
-
-### 2026-05-14 · M1.5b — Backend introspection (`ProbeBackend` RPC + status enrichment + `qcc qpu`)
-
-After M1.5a the executor *runs* on real-calibration noise but the controller had no way to *see* that calibration — selection had no scoring inputs, `kubectl get qpus` showed user-asserted qubit counts that might or might not match reality, and `qcc get <circuit>` couldn't explain why a histogram looked the way it did.
-
-**The RPC** (`qcc.executor.v1.Executor.ProbeBackend`): read-only introspection of a named backend. Returns `num_qubits`, `basis_gates`, `coupling_edges`, `last_calibration_time`, and population medians for single-qubit / two-qubit / readout errors. Implemented uniformly across adapters via the new `Adapter.inspect()` ABC method — `AerAdapter` reads from the resolved backend's V2 `Target`, `IBMAdapter` does the same against the live IBM backend (M2 path) by reusing the same helpers. The QPUReconciler calls this on registration; M2 will add a TTL refresh per `QCC-System-Design.md` §7.1.
-
-**Source-of-truth shift on the K8s side**: `spec.qubits` is now optional and treated as a *hint* — the QPUReconciler stamps `status.qubits` (along with `status.basisGates`, `status.couplingEdges`, `status.lastCalibrationTime`, `status.errorMedians`) from the probe. `QPU.EffectiveQubits()` is the canonical accessor and prefers status over spec. Printer column `QUBITS` now reads `.status.qubits`. This brings the QPU CRD in line with the standard K8s pattern: spec is desire (optional, often empty); status is observed truth.
-
-**Empirical effect** — `qcc qpu fake-brisbane` now renders:
-
-```
-provider     local
-backend      fake_brisbane
-kind         simulator
-available    Available
-qubits       127
-coupling     144 edges
-basis gates  delay, ecr, for_loop, id, if_else, measure, reset, rz, switch_case, sx, x
-calibrated   2025-02-26 (15 mo ago)
-
-1Q gate error  1.99e-04
-2Q gate error  7.72e-03
-readout error  2.00e-02
-```
-
-…and `qcc get <bell-circuit>` shows the same gate-error medians inline alongside the histogram, which closes the explanation loop: the 5-6% off-diagonal mass on Bell is *literally that 2.00e-02 readout error plus that 7.72e-03 ECR error compounded across 2 measurements + 1 entangling gate*. Ch7 cites this directly.
-
-**Failure semantics**: probe failures are non-fatal. If `ProbeBackend` returns `AdapterUnavailable` (unknown backend name) or any other error, the QPUReconciler logs the reason and proceeds to mark the QPU `Available` based on its provider — `status.qubits` stays zero, selection falls back to `spec.qubits` (the user hint). This guarantees a flaky probe doesn't lock a QPU out of selection.
-
-**One Makefile change worth noting**: `controller-gen` rejects `float64` in CRDs by default (interop conservatism). Added `crd:allowDangerousTypes=true` so `QPUErrorMedians` can ship as native floats. The thesis-scale Go+Python consumer set makes the interop concern moot; if QCC ever ships to a third-party CRD consumer ecosystem, this becomes worth re-evaluating.
-
-### 2026-05-14 · M1.5a — `fake_*` backend names execute through `FakeProviderForBackendV2`
-
-Before this change, `Circuit.spec.backendSelector.backendName=fake_brisbane` would *select* the `fake-brisbane` QPU (Move 1 of the chain working as designed) but the executor's `AerAdapter` ignored the backend name and ran *every* Circuit on generic noise-free `AerSimulator`. So fake backends were registration-and-display names with no execution semantics — a known M1 limitation.
-
-After: `AerAdapter._resolve_local_backend(backend_name)` returns `FakeProviderForBackendV2().backend(backend_name)` when the name starts with `fake_`, and plain `AerSimulator()` otherwise. The transpile + submit path is already backend-polymorphic, so no other code in the executor needs to change — the fake backend's `Target` carries the real Brisbane coupling map, basis gates, and frozen calibration snapshot, and Aer applies the derived noise model during simulation.
-
-**Empirical effect** measured on the same Bell circuit at 4096 shots:
-
-| Backend | `00` | `01` | `10` | `11` | off-diagonal |
-|---|---|---|---|---|---|
-| `local-aer` (`AerSimulator()`) | 2043 | 0 | 0 | 2053 | 0% |
-| `fake-brisbane` (Brisbane snapshot via Aer) | 1916 | 125 | 132 | 1923 | **6.3%** |
-
-The 6.3% off-diagonal mass on fake-brisbane is the readout + gate error from Brisbane's real calibration, not synthetic noise. This is the empirical claim Ch7 makes about calibration-driven variance — now demonstrable end-to-end from `make deploy`, with no IBM credentials.
-
-**Failure-mode shape**: unknown `fake_*` names raise `AdapterUnavailable` from `AerAdapter.__init__`, the servicer catches and returns `TaskStatus.FAILED` with reason `NoEligibleBackend`. The Go controller's existing `TaskError` dispatch handles this terminally (no retry loop) — important because `QiskitBackendNotFoundError` is not a transient condition.
-
-What this does *not* yet do: probe the backend to fill `QPU.status` with the calibration metadata. That's M1.5b — same execution surface, adds the observability surface so `qcc get qpu fake-brisbane` shows the gate errors that explain the 6.3% above. The CRD shape is unchanged either way; M1.5b is purely additive on `status`.
-
-### 2026-05-14 · Selection-chain responsibility split (Move 1 controller, Moves 2–5 executor)
-
-The five-move accuracy chain (`QCC-Design-State.md` §5) was originally framed as "executes inside QRM on every selection." Cross-referencing `QCC-System-Design.md` §7 during M1 implementation surfaced that this is too coarse: the executor has no Kubernetes API access (no ServiceAccount, no `client.Client`), so it cannot perform Move 1 (`r.List(&QPUList)`). Splitting the chain along the responsibility line in §7's component table:
-
-- **Move 1** — enumerate registered QPUs + apply hard-constraint filter (provider, backendName, kind, minQubits, MaxShots capability, `status.availability == Available`). Controller-side; implemented in M1 via `CircuitReconciler.selectBackend` and the pure-function `filterEligibleQPUs` helper.
-- **Moves 2–5** — calibrate (per-`QPU` TTL cache, see `QCC-System-Design.md` §7.1), transpile per backend, evaluate layout (`mapomatic`), compute composite score. Executor-side, M2.
-
-The gRPC contract for M1 stays unchanged: `RunCircuit` takes a single `BackendTarget` derived from the controller's chosen QPU. When M2 lands, the contract extends — either a new `SelectBackend` RPC or an extended `RunCircuit` that takes a candidate list and returns the chosen one with decision evidence. M1's controller-side "first-match" policy is a placeholder for "the executor scored these and picked one" — the data flow is identical, only the scoring intelligence moves.
-
-The `Executor` interface in `internal/controller/circuit_controller.go` now takes a `*qccv1alpha1.QPU` parameter explicitly so the resolution (the chosen QPU) and the intent (`Circuit.spec.BackendSelector`) are not conflated.
-
-`QCC-System-Design.md` §9 was updated to mark which moves run where; `QCC-API.md` §4.1 carries the reference back.
-
----
 
 ## 1. Locked Architecture — Five Components
 
@@ -845,7 +651,7 @@ QCC is the **cloud-native fork of QCSC Layer 2 (System Orchestration)** in Seela
 Canonical positioning sentence:
 > "QCC is a deployable cloud-native instantiation of the System Orchestration layer of Seelam et al.'s QCSC reference architecture, with vendor-neutral observability filling the System Management and Monitoring cross-cut that Seelam et al. identify as architecturally necessary but do not specify in implementation."
 
-## 5. The Five-Move Accuracy Chain (executes inside QRM on every selection)
+## 5. The Five-Move Accuracy Chain (design spec; partial implementation)
 
 1. **Enumerate** — candidates across registered QPUs, filter by hard constraints (qubits, status). Budget: ~50 ms cached, several seconds fresh.
 2. **Calibrate** — pull live calibration per candidate (timestamp captured). Budget: 0.5–2 s per candidate. Per-call deadline: 5 s.
@@ -854,6 +660,8 @@ Canonical positioning sentence:
 5. **Score** — composite: fidelity × freshness × queue weight. Budget: ~10 ms.
 
 Total `Select` budget: 5–30 s for typical circuits, dominated by Moves 2 and 3.
+
+**Implementation status (Path D+):** Move 1 is shipped (controller-side); Moves 2–5 are 🪪 Ch9 future-work. The shipped R3 evidence is `qcc run --performance-test` (empirical cross-substrate comparison) rather than a predictive scorer — see the 2026-05-17 evening decision-log entries and `QCC-System-Design.md` §9.
 
 ## 6. Auto-Selection Mode
 

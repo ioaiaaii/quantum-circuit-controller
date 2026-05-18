@@ -220,25 +220,21 @@ rpc FetchTaskResult(FetchTaskResultRequest) returns (FetchTaskResultResponse);
 ```
 These task-lifecycle RPCs align directly with Qiskit's `qiskit.providers.JobV1` contract (`backend.run() → Job`; `job.job_id() / job.status() / job.result()`), which every Qiskit provider plugin (`qiskit-ibm-runtime`, `qiskit-braket-provider`, `qiskit-ionq`, …) implements uniformly. Real-hardware adapters that wrap a Qiskit provider therefore satisfy the async contract without translation. The same RPCs also map onto QRMI's `task_start` / `task_status` / `task_result` (Bacher et al., 2025) — relevant for future-work alternative substrates (Ch9; see `QCC-Design-State.md` §7d).
 
-**Pure-Python utilities — `ConvertSource` / `DrawCircuit`**:
+**Pure-Python utilities — `ConvertSource` / `DrawCircuit`** — stateless adapters over the executor's `qiskit_io` module, no backend interaction:
 ```protobuf
 rpc ConvertSource(ConvertSourceRequest) returns (ConvertSourceResponse);
 rpc DrawCircuit(DrawCircuitRequest) returns (DrawCircuitResponse);
 
-message CircuitSource {
-  string format = 1;  // "openqasm3" | "qiskit"
-  string body   = 2;
-}
+message CircuitSource { string format = 1; string body = 2; }  // "openqasm3" | "qiskit"
 ```
-Neither call talks to a quantum backend — they are stateless adapters over the executor's `qiskit_io` module:
-- `ConvertSource` translates a `qiskit`-format body to OpenQASM 3 by exec'ing the Python source in a fresh module namespace, locating the first `QuantumCircuit` at module scope, decomposing high-level library instructions (e.g. `QFT`, custom `to_gate()` constructions used in Shor's / Grover's / QPE), and dumping the result via `qiskit.qasm3.dumps`. Decomposition is required because Qiskit's QASM 3 exporter currently rejects "non-unitary subroutine calls"; without it, every Shor/Grover/QPE submission with `source.format=qiskit` would fail at the export step. The controller's executor client calls this transparently whenever `Circuit.spec.source.format=qiskit`, so the reconciler stays format-agnostic.
-- `DrawCircuit` accepts either format, parses to a `QuantumCircuit`, and returns ASCII text (Qiskit's text drawer). It backs `Circuit.spec.mode=draw`.
+- `ConvertSource` translates `qiskit`-format Python to OpenQASM 3 by exec'ing the source in a fresh namespace, finding the first `QuantumCircuit`, decomposing library instructions (`QFT`, `to_gate()` chains used in Shor/Grover/QPE — the QASM 3 exporter rejects "non-unitary subroutine calls"), and dumping via `qiskit.qasm3.dumps`. Called transparently by the controller's executor client when `source.format=qiskit`.
+- `DrawCircuit` accepts either format, returns ASCII via Qiskit's text drawer. Backs `mode=draw`.
 
-Conversion or rendering failures are returned in the response's `status` + `error_reason` / `error_message` fields (e.g., `RenderingFailed`, `SourceConversionFailed`), so they map onto the controller's existing `TaskError` dispatch path without special-casing.
+Failures return `TaskStatus.FAILED` + `error_reason` / `error_message` (`SourceConversionFailed`, `RenderingFailed`) — same dispatch path as adapter errors.
 
 **Shared types**:
-- `TaskSpec` carries `idempotency_key`, `qasm`, `shots`, `target`, optional `optimization_level` and `timeout_seconds`, and the Tier-2 passthrough carriers `transpile_options` + `execute_options` (both `google.protobuf.Struct`).  Tier-2 keys flow from `Circuit.spec.transpile` / `Circuit.spec.execute` through the controller untouched and land as `**kwargs` on `qiskit.compiler.transpile()` / `AerSimulator.run()` / `SamplerV2.run()`; see `QCC-Design-State.md` §7a (Composition Principle).  Both sync and async execution requests embed a `TaskSpec` so the adapter contract is uniform.  `ConvertSource` and `DrawCircuit` instead take a `CircuitSource` because they operate on the source body, not on a transpilable task.
-- `TaskStatus` enum: `PENDING / RUNNING / DONE / FAILED / CANCELLED`. `RunCircuit`, `ConvertSource`, and `DrawCircuit` return only `DONE` or `FAILED` (all three wait to terminal); the async path can return any state through `WatchTask`.
+- `TaskSpec` carries `idempotency_key`, `qasm`, `shots`, `target`, optional `optimization_level` / `timeout_seconds`, plus Tier-2 passthrough carriers `transpile_options` / `execute_options` (both `google.protobuf.Struct`). Tier-2 keys flow `Circuit.spec.{transpile,execute}` → controller → `**kwargs` on `qiskit.compiler.transpile()` / `AerSimulator.run()` / `SamplerV2.run()` (see `QCC-Design-State.md` §7a, Composition Principle). Both sync and async execution requests embed a `TaskSpec`. `ConvertSource` / `DrawCircuit` take `CircuitSource` instead because they operate on source bodies.
+- `TaskStatus` enum: `PENDING / RUNNING / DONE / FAILED / CANCELLED`. Sync RPCs return only `DONE`/`FAILED`; the async path can return any state via `WatchTask`.
 
 ### 6.3 Internal Adapter contract
 
@@ -264,11 +260,11 @@ A registry in `adapters/__init__.py` maps provider strings to implementations:
 
 | Provider | Adapter | Status |
 |---|---|---|
-| `""` / `local` | `AerAdapter` | in-process Qiskit Aer simulator + `fake_*` snapshots via `FakeProviderForBackendV2` + method-pinned variants (`aer_statevector`, `aer_mps`, …) via the resolver — no credentials — **shipped M1** |
-| `ibm` | `IBMAdapter` | wraps `qiskit-ibm-runtime` (`QiskitRuntimeService` + `SamplerV2`); reaches IBM Quantum hardware + IBM cloud simulators; credentials via `QISKIT_IBM_TOKEN` from a K8s Secret (channel defaults to `ibm_quantum_platform`, overridable via `QISKIT_IBM_CHANNEL`) — **shipped M3 (2026-05-16)** |
-| `ibm-via-braket` *(optional, future)* | generic `QiskitProviderAdapter` | wraps any `qiskit.providers.Provider`; reaches IonQ + Rigetti + IQM + AQT + QuEra through `qiskit-braket-provider` aggregator; AWS credentials via Secret — **planned post-M3** |
+| `""` / `local` | `AerAdapter` | Qiskit Aer in-process + `fake_*` snapshots via `FakeProviderForBackendV2` + method-pinned variants (`aer_statevector`, `aer_mps`, …) — no credentials. **Shipped M1.** |
+| `ibm` | `IBMAdapter` | `qiskit-ibm-runtime` (`QiskitRuntimeService` + `SamplerV2`); IBM Quantum hardware + cloud simulators; credentials via `QISKIT_IBM_TOKEN` Secret (channel `QISKIT_IBM_CHANNEL`, defaults to `ibm_quantum_platform`). **Shipped M3 (2026-05-16).** |
+| `qiskit-via-braket` | generic `QiskitProviderAdapter` wrapping any `qiskit.providers.Provider`; IonQ / Rigetti / IQM / AQT / QuEra via `qiskit-braket-provider`. | **🪪 Ch9** future-work. |
 
-Vendor coverage comes from the Qiskit provider ecosystem (Qiskit-internal `qiskit.providers.Backend` abstraction), not from per-vendor adapter code in QCC. Adding a Qiskit-provider-compatible vendor is one new branch in an existing adapter's resolver + the corresponding pip dependency on the executor image. Adding a non-Qiskit-ecosystem substrate (e.g. QRMI for Pasqal-direct, CUDA-Q for NVIDIA-reach) is one new `adapters/<name>.py` module — Ch9 future-work; see `QCC-Design-State.md` §7d for the QEI direction that formalizes this seam as a public interface.
+Vendor reach lives in the Qiskit provider ecosystem (`qiskit.providers.Backend` abstraction): adding a Qiskit-provider-compatible vendor is one resolver branch + a pip dependency. Adding a non-Qiskit substrate (QRMI for Pasqal-direct, CUDA-Q for NVIDIA-reach) is one new `adapters/<name>.py` module — Ch9 future-work; see `QCC-Design-State.md` §7d (QEI direction).
 
 ## 7. Component responsibilities
 
@@ -310,32 +306,32 @@ The external lifecycle intentionally hides internal selection detail. Internally
 
 ## 9. Backend-selection model
 
-QCC uses a five-step selection chain.  Move 1 is **controller-side** because it operates on Kubernetes resources (`List` of `QPU` CRDs); Moves 2–5 are **executor-side** because they require Qiskit/SDK access (calibration RPCs, transpiler, layout evaluation).  The controller hands the filtered candidate list to the executor; the executor returns the chosen QPU with decision evidence.  This split follows §7's component-responsibility table directly.
+QCC defines a five-move selection chain. Move 1 is **controller-side** (operates on `QPU` CRDs); Moves 2–5 are **executor-side** (need Qiskit/SDK access for calibration RPCs, per-candidate transpilation, layout evaluation, and scoring).
 
 ```mermaid
 flowchart TD
-    A["Enumerate candidate QPUs<br/><i>(Move 1, controller)</i>"] --> B["Fetch calibration and queue metadata<br/><i>(Move 2, executor)</i>"]
-    B --> C["Transpile circuit per backend<br/><i>(Move 3, executor)</i>"]
-    C --> D["Evaluate layout and circuit quality<br/><i>(Move 4, executor)</i>"]
-    D --> E["Compute candidate score<br/><i>(Move 5, executor)</i>"]
+    A["Enumerate candidate QPUs<br/><i>(Move 1, controller — shipped)</i>"] --> B["Fetch calibration & queue metadata<br/><i>(Move 2, executor — Ch9)</i>"]
+    B --> C["Transpile per candidate<br/><i>(Move 3, executor — Ch9)</i>"]
+    C --> D["Evaluate layout quality<br/><i>(Move 4, executor — Ch9)</i>"]
+    D --> E["Composite score<br/><i>(Move 5, executor — Ch9)</i>"]
     E --> F{mode = select?}
-    F -->|yes| G[Return selected backend and decision evidence]
+    F -->|yes| G[Return selected backend + decision evidence]
     F -->|no| H[Submit execution job]
 ```
 
-**M1 status**: Move 1 is implemented (`internal/controller/circuit_controller.go::selectBackend` lists QPUs, filters by `BackendSelector`, fails with `NoEligibleBackend` if zero match).  Moves 2–5 are M2 — the M1 controller picks the first eligible candidate and passes it to the executor as a single `BackendTarget`.  When M2 lands, the gRPC contract extends to carry the filtered candidate list and the executor runs Moves 2–5 over it.
+**Shipped status (Path D+).** Move 1 is implemented (`internal/controller/circuit_controller.go::selectBackend` lists QPUs, applies `BackendSelector` hard-constraint filtering, fails with `NoEligibleBackend` if zero match). Moves 2–5 are Ch9 future-work; rationale and alternative-design exploration in `QCC-Design-State.md` decision-log entries from 2026-05-17 (evening).
 
-The composite score is not proposed as an optimal quantum scheduling algorithm. It is an explicit and observable policy for combining backend suitability signals into a single selection decision.
+**Empirical R3 evidence shipped instead — `qcc run --performance-test`.** Rather than a predictive scorer, QCC ships a *cross-substrate evaluation primitive*: one CLI flag submits the same circuit body across every available simulator QPU (and optionally real hardware via `--include-hardware`) under a shared `qcc.io/experiment` label, then prints a comparison table and a Grafana deep link. The platform makes substrate comparison observable for any user circuit, without committing to a particular scoring formula. This satisfies R3 with measurement rather than prediction; the future-work bundle in Ch9 enumerates the predictive variants (formula-based Move 5, fake-twin empirical scoring, full Moves 2–4 + `mapomatic`).
 
-Candidate scoring may include:
+Move 5 candidate signals, when implemented, would include:
 
-- hard constraints: minimum qubits, simulator/hardware type, provider, region, allowed backend list;
-- circuit-shape signals: transpiled depth, two-qubit gate count, layout quality;
-- hardware signals: calibration age, gate error, readout error, coupling constraints;
-- operational signals: queue depth, estimated wait, provider availability;
-- user intent: `mode=select`, preferred backend, maximum cost or execution constraints if supported later.
+- **Hard constraints** (Move 1 today): minimum qubits, simulator/hardware kind, provider, region, allowed-backend list.
+- **Circuit-shape signals**: transpiled depth, two-qubit gate count, layout quality.
+- **Hardware signals**: calibration age, gate-error medians, readout error, coupling constraints.
+- **Operational signals**: queue depth, estimated wait, provider availability.
+- **User intent**: `mode=select`, preferred backend, cost or deadline constraints.
 
-For the thesis prototype, the important property is not optimality. The important property is that the decision is explainable, reproducible from telemetry, and connected to quantum execution constraints.
+The composite score, when implemented, would not be proposed as an optimal quantum scheduling algorithm — only as an explainable, telemetry-reproducible decision connected to quantum execution constraints.
 
 ## 10. `Circuit.spec.mode` — verb modes
 
@@ -427,7 +423,7 @@ For the MSc prototype, controller and executor communicate over a ClusterIP `Ser
 
 - Kubernetes is used as the orchestration substrate.
 - OpenQASM 3 is the canonical circuit interchange format at the QCC API boundary; `qiskit`-format sources are accepted as a convenience and converted to OpenQASM 3 server-side by the executor's `ConvertSource` RPC. The Go controller and CLI never depend on a Python SDK.
-- The prototype targets IBM Quantum via `IBMAdapter` (wrapping `qiskit-ibm-runtime`'s `QiskitRuntimeService` + `SamplerV2`), shipped M3 2026-05-16.  Broader vendor reach through a generic `QiskitProviderAdapter` (wrapping any `qiskit.providers.Provider` — e.g. `qiskit-braket-provider` for IonQ + Rigetti + IQM + AQT + QuEra via AWS Braket aggregator) is planned post-M3.  Both paths use the Qiskit provider ecosystem's `JobV1` async contract, so the controller's async lifecycle is uniform across them.
+- The prototype targets IBM Quantum via `IBMAdapter` (wrapping `qiskit-ibm-runtime`'s `QiskitRuntimeService` + `SamplerV2`), shipped M3 2026-05-16. Broader vendor reach via a generic `QiskitProviderAdapter` (any `qiskit.providers.Provider` — e.g. `qiskit-braket-provider` for IonQ + Rigetti + IQM + AQT + QuEra) is Ch9 future-work. Both paths use Qiskit's `JobV1` async contract; the controller's async lifecycle works uniformly across them.
 - `AerAdapter` (Qiskit Aer, in-process; plus `fake_*` snapshots via `FakeProviderForBackendV2`) is shipped today for credential-free evaluation and forms the basis for the thesis's M1 and M1.5 evidence.
 - The community QRMI library (Bacher et al., 2025) and NVIDIA CUDA-Q are recognised alternative substrates and are documented as Ch9 future-work in `QCC-Design-State.md` §7d (QEI direction) — they are not on the thesis-implementation critical path.
 - The thesis evaluation can use `mode=select` to avoid unnecessary QPU execution.
@@ -437,22 +433,17 @@ For the MSc prototype, controller and executor communicate over a ClusterIP `Ser
 
 QCC demonstrates architectural direction, not production completeness.
 
-Known limitations:
+- **Vendor coverage** is what shipped adapters provide — IBM Quantum via `IBMAdapter`, plus Aer / `fake_*` via `AerAdapter`. Broader Qiskit-ecosystem reach via a generic `QiskitProviderAdapter` (Braket aggregator, IonQ, Rigetti, IQM, AQT) is Ch9 future-work, not per-vendor code in QCC core.
+- **Backend-selection scoring** ships Move 1 (hard-constraint filter) only; Moves 2–5 (predictive scoring) are Ch9. `qcc run --performance-test` provides empirical cross-substrate evaluation as the shipped R3 evidence primitive — see §9.
+- **QPU metadata** may be stale, incomplete, or provider-specific.
+- **Real QPU queue behavior** is delegated to the vendor; QCC doesn't model it beyond reporting `status.queuePosition` from the vendor's stream.
+- **Result persistence** is inline on `Circuit.status.results` for thesis-scale circuits; no out-of-band ResultRef indirection today (see `QCC-API.md` §3.5).
+- **Security** is basic — namespace isolation + provider credential handling. mTLS, multi-tenant credential isolation, admission control are Ch9 / post-thesis.
+- **Multi-tenancy, quotas, HPC scheduler integration** — out of scope.
 
-- the prototype's vendor coverage is what the Qiskit provider ecosystem provides via shipped adapters — IBM Quantum directly through `qiskit-ibm-runtime`, and IonQ + Rigetti + IQM + AQT + QuEra through `qiskit-braket-provider` if the optional Braket aggregator is enabled. Other vendors (Quantinuum, Pasqal-direct, NVIDIA CUDA-Q-reached vendors) arrive through additional Qiskit-provider plugins or alternative-substrate adapters (Ch9 future-work; QEI direction in `QCC-Design-State.md` §7d) rather than per-vendor code in QCC core;
-- scoring policy is heuristic and experimental;
-- QPU metadata may be stale, incomplete, or provider-specific;
-- real QPU queue behavior may not be fully controllable;
-- result persistence can remain minimal;
-- security is scoped to basic Kubernetes and provider credential handling;
-- multi-tenancy and quotas are out of scope;
-- HPC scheduler integration is out of scope for the first prototype.
+**Alternative substrates (Ch9 future-work).** QRMI (Bacher et al., 2025, [arXiv:2506.10052](https://arxiv.org/abs/2506.10052)) offers a language-agnostic vendor abstraction below the SDK layer; NVIDIA CUDA-Q reaches a different vendor set (Quantinuum, Pasqal-direct, ORCA, Anyon). Both are absorbable through the adapter pattern without QCC-core changes. See `QCC-Design-State.md` §7d for the **QEI direction** — formalising the adapter seam as a public Kubernetes-style plugin interface so third-party plugins for QRMI, CUDA-Q, or future substrates don't require modifying QCC core.
 
-**Qiskit provider ecosystem integration.** QCC's vendor reach in the thesis implementation comes from the **Qiskit provider ecosystem** — `qiskit.providers.Backend` is the abstraction Qiskit itself ships, and every vendor plugin (`qiskit-ibm-runtime`, `qiskit-braket-provider`, `qiskit-ionq`, `qiskit-iqm`, `qiskit-aqt-provider`, …) implements the same `Provider().get_backend().run() → JobV1` contract.  `IBMAdapter` (§6.3) wraps `qiskit-ibm-runtime` for direct IBM Quantum reach — shipped M3 2026-05-16, verified end-to-end on `ibm_kingston` (Heron r2).  A generic `QiskitProviderAdapter` wrapping any `qiskit.providers.Provider` for broader vendor coverage is planned post-M3.  The async gRPC task-lifecycle path (`SubmitTask` / `WatchTask` / `FetchTaskResult`, §6.2) maps onto Qiskit's `JobV1` (`backend.run() → job_id → job.status() → job.result()`) without translation.  This positions QCC as the operator-pattern Kubernetes counterpart to the proprietary managed-quantum-cloud platforms (IBM Quantum Platform, AWS Braket, Azure Quantum) — sharing the underlying Qiskit provider abstraction, differing on the platform layer (K8s-native open-source vs. managed proprietary).
-
-**Alternative substrates (Ch9 future-work).** The community QRMI library (Bacher et al., 2025, [arXiv:2506.10052](https://arxiv.org/abs/2506.10052)) and NVIDIA's CUDA-Q both provide alternative substrates that QCC's adapter pattern could absorb without core changes. QRMI offers a language-agnostic (Rust-core) vendor abstraction below the SDK layer, relevant when non-Python or multi-SDK reach becomes load-bearing; CUDA-Q reaches a different vendor set (Quantinuum, Pasqal-direct, ORCA, Anyon) at the cost of dropping IBM access. Both are documented as Ch9 future-work directions; see `QCC-Design-State.md` §7d for the QEI direction that would formalize the adapter pattern as a public Kubernetes-style plugin interface, enabling third-party plugins for QRMI, CUDA-Q, and future substrates without modifying QCC core.
-
-**Named future work.** A higher-level `Workflow` (or `CircuitBatch`) custom resource that captures iteration semantics for VQE/QAOA/parameter-sweep style workloads, sitting on top of `Circuit`. The composition story is in §6.1; the work is left for a follow-on operator layered above QCC.
+**Workflow layer.** A higher-level `Workflow` (or `CircuitBatch`) CRD capturing iteration semantics for VQE/QAOA/parameter-sweep workloads is named future-work; composition story in §6.1.
 
 ## 16. Mapping to thesis chapters
 
@@ -468,13 +459,13 @@ Known limitations:
 | Backend selection | Chapter 6 scheduling/selection model, Chapter 7 `mode=select` experiments. |
 | Observability | Chapter 6 observability architecture, Chapter 7 telemetry screenshots/results. |
 | Failure model and limitations | Chapter 8 discussion and Chapter 9 future work. |
-| Qiskit provider ecosystem integration | Chapter 6 vendor-neutrality argument; Chapter 7 implementation (`IBMAdapter` shipped + optional `QiskitProviderAdapter` planned post-M3). |
+| Qiskit provider ecosystem integration | Chapter 6 vendor-neutrality argument; Chapter 7 implementation (`IBMAdapter` shipped; `QiskitProviderAdapter` Ch9 future-work). |
 | QEI direction (Ch9 future-work) | Chapter 9 future-work — formalising the adapter pattern as a public Kubernetes-style plugin interface (CRI/CNI/CSI precedent); enables third-party plugins (QRMI, CUDA-Q, vendor-direct). |
 
 ## 17. Thesis-safe summary
 
-QCC should be described in the thesis as follows:
-
-> QCC is a cloud-native control-plane prototype for quantum circuit execution. It represents circuits and quantum backends as Kubernetes resources, reconciles circuit execution through an operator-based lifecycle, delegates backend-specific quantum logic to a separately-deployed Python executor service reached over an in-cluster gRPC `Service`, and exposes the resulting quantum--classical execution path through a Kubernetes-native observability surface: CRD status and conditions as the durable per-instance audit trail, Kubernetes events as the lifecycle narrative, Prometheus-compatible metrics in a documented `qcc.*` vocabulary for aggregate analysis, and a cross-boundary identifier convention (the Circuit's K8s UID stamped onto provider-side job tags) for bidirectional correlation between the K8s control plane and the quantum vendor's job system. The design does not introduce a new quantum algorithm; it investigates how operational patterns from cloud-native systems and site reliability engineering can be applied to the interface between classical infrastructure and quantum processing units.
+> **What QCC is.** A cloud-native control-plane prototype for quantum circuit execution. Circuits and backends are Kubernetes resources; lifecycle is driven by an operator-pattern controller; vendor-specific quantum logic is delegated to a separately-deployed Python executor reached via in-cluster gRPC. The quantum–classical execution path is exposed through a Kubernetes-native observability surface — CRD status + conditions as the per-instance audit trail, K8s Events as the lifecycle narrative, Prometheus metrics in a documented `qcc.*` vocabulary for aggregate analysis, and a cross-boundary identifier convention (Circuit K8s UID stamped into vendor job-tags; vendor `provider_job_id` carried back as a metric label) for bidirectional QCC↔vendor lookup.
 >
-> Positioned within the Quantum Cloud Software Continuum reference architecture of Seelam et al. (2026), QCC occupies QCSC Layer 2 (System Orchestration) and absorbs a slice of Layer 3 (Application Middleware) needed for calibration-aware backend selection. QCC is the open-source Kubernetes-native counterpart to the managed proprietary quantum cloud platforms (IBM Quantum Platform, AWS Braket, Azure Quantum) — sharing the underlying Qiskit `qiskit.providers.Backend` abstraction for vendor reach, differing in the platform layer (K8s-native open-source vs. managed proprietary). The HPC counterpart of QCC is the Slurm SPANK plug-in with QRMI (Bacher et al., 2025), which provides the same vendor-abstraction role for HPC scheduling environments; QCC and that plug-in target different orchestrator substrates (Kubernetes vs. Slurm) and produce different observability artifacts as a consequence — QCC contributes the K8s-native CRD lifecycle as the per-instance audit primitive and the cross-boundary identifier convention closing the live-correlation requirement, neither of which the HPC instantiation produces (it ships Prometheus-based metrics but no CRD-shaped per-job lifecycle artifact, no cross-boundary identifier stamping). QCC additionally contributes calibration-aware backend selection. The thesis demonstrates the architecture on the Qiskit provider ecosystem because that is the largest current quantum-SDK user community; the substrate-substitution argument (Chapter 6 §6.x; Chapter 9 future-work) shows the pattern extending to non-Qiskit substrates (QRMI, NVIDIA CUDA-Q) through the same adapter-as-seam architecture.
+> **What QCC is not.** The thesis does not introduce a new quantum algorithm. It investigates how operational patterns from cloud-native systems and site-reliability engineering can be applied to the interface between classical infrastructure and quantum processing units.
+>
+> **Positioning.** Within Seelam et al.'s QCSC reference architecture (2026), QCC occupies Layer 2 (System Orchestration) and absorbs the Layer 3 slice — per-candidate transpilation, layout evaluation — needed for calibration-aware selection. QCC is the open-source Kubernetes-native counterpart to managed proprietary platforms (IBM Quantum Platform, AWS Braket, Azure Quantum), sharing the Qiskit `qiskit.providers.Backend` abstraction for vendor reach and differing on the platform layer. The HPC counterpart is the Slurm + SPANK + QRMI stack (Bacher et al., 2025), which performs the same vendor-abstraction role for HPC scheduling but produces different observability artifacts — QCC contributes the K8s-native CRD lifecycle as the per-instance audit primitive and the cross-boundary identifier convention closing the live-correlation requirement, neither of which the HPC instantiation produces. The thesis demonstrates the architecture on the Qiskit provider ecosystem; the substrate-substitution argument (Ch6, Ch9) shows the pattern extending to QRMI / CUDA-Q via the same adapter-as-seam.

@@ -271,7 +271,7 @@ For the CLI consumer, the contract is "follow the ref": after `status.phase = Su
 
 `QPU` represents an execution backend profile. It does not model a quantum processor physically. It models the backend metadata required by QCC to decide whether a circuit can be evaluated or executed and how that execution should be observed. Implemented in `api/v1alpha1/qpu_types.go`; cluster-scoped; reconciled by `QPUReconciler` in `internal/controller/qpu_controller.go`.
 
-The selection-chain split — Move 1 (enumerate + hard-constraint filter) is controller-side, Moves 2–5 (calibrate, transpile, layout, score) are executor-side — follows `QCC-System-Design.md` §7's component-responsibility table: the controller owns Kubernetes-API operations, the executor owns Qiskit/SDK operations. For M1 only Move 1 is implemented; the executor's scoring is M2.
+The selection-chain split — Move 1 (enumerate + hard-constraint filter) is controller-side, Moves 2–5 (calibrate, transpile, layout, score) are executor-side — follows `QCC-System-Design.md` §7's component-responsibility table: the controller owns Kubernetes-API operations, the executor owns Qiskit/SDK operations. Move 1 is implemented today; Moves 2–5 are Ch9 future-work, and the shipped R3 evidence is `qcc run --performance-test` (empirical cross-substrate comparison) — see `QCC-System-Design.md` §9.
 
 ### 4.2 Design shape
 
@@ -338,15 +338,15 @@ Populated by the `QPUReconciler`; the calibration-relevant fields come from the 
 |---|---|---|
 | `availability` | enum | `Available`, `Unavailable`, `Unknown`. |
 | `qubits` | integer | Authoritative qubit count from `ProbeBackend`. Selection reads this in preference to `spec.qubits`; use `QPU.EffectiveQubits()` for the resolution rule. Zero when the probe hasn't run yet. |
-| `basisGates` | list of strings | Native gate set reported by the backend's `Target` (e.g. `[ecr, rz, sx, x]` for `fake_brisbane`). Read by Move 3 (transpile per backend) in M2. |
-| `couplingEdges` | integer | Count of physical 2-qubit edges in the backend's coupling map. Zero means all-to-all (typical for generic Aer); a positive value drives Move 4 (layout evaluation) in M2. |
+| `basisGates` | list of strings | Native gate set reported by the backend's `Target` (e.g. `[ecr, rz, sx, x]` for `fake_brisbane`). Read by Move 3 (transpile per candidate) — Ch9 future-work. |
+| `couplingEdges` | integer | Count of physical 2-qubit edges in the backend's coupling map. Zero means all-to-all (typical for generic Aer); a positive value would drive Move 4 (layout evaluation) — Ch9 future-work. |
 | `lastCalibrationTime` | timestamp | Used for freshness-aware selection. For `fake_*` simulators this is the frozen snapshot date (often months old); for live hardware it's the most recent vendor refresh. |
-| `errorMedians.{singleQubit,twoQubit,readout}` | float64 each | Population medians (in [0, 1]) of per-instruction error rates from the backend's `Target`. Zero means "not reported by this backend" — Move 5 (scoring) in M2 treats absence as skip, never as perfect. |
-| `queueDepth` | integer | Operational queue signal where available. Populated by M2 hardware probes. |
+| `errorMedians.{singleQubit,twoQubit,readout}` | float64 each | Population medians (in [0, 1]) of per-instruction error rates from the backend's `Target`. Zero means "not reported by this backend" — a hypothetical Move 5 scorer (Ch9) would treat absence as skip, never as perfect. |
+| `queueDepth` | integer | Operational queue signal where available. Populated only when surfaced by a vendor-side probe; not refreshed by a TTL cache today (Ch9). |
 | `conditions` | list | Standard state reporting. |
 | `lastError` | object | Provider metadata refresh error, if any. |
 
-**`ProbeBackend` semantics**: the executor reads the backend's `Target` (Qiskit V2 Backend API) — calibration timestamps, per-qubit `T1`/`T2`, per-instruction `error` fields, coupling map — and returns medians + counts. For `fake_*` backends the timestamp is the frozen capture date; live hardware reports its most recent vendor refresh. The probe is read-only — no shots consumed, no submissions made. M1.5b probes once at registration; M2 will run a TTL refresh (≈ 60 s) per `QCC-System-Design.md` §7.1.
+**`ProbeBackend` semantics**: the executor reads the backend's `Target` (Qiskit V2 Backend API) — calibration timestamps, per-qubit `T1`/`T2`, per-instruction `error` fields, coupling map — and returns medians + counts. For `fake_*` backends the timestamp is the frozen capture date; live hardware reports its most recent vendor refresh. The probe is read-only — no shots consumed, no submissions made. Probes once at QPU registration; TTL-based periodic refresh is Ch9 (see `QCC-System-Design.md` §15 limitations).
 
 **`spec.qubits` is a hint**, not authoritative. When omitted the user signals "trust the probe"; when set it's used as the fallback if the probe hasn't run yet (registration race window). The CLI honours both forms via `QPU.EffectiveQubits()`.
 
@@ -359,12 +359,13 @@ The phase field should remain small and user-facing.
 | Phase | Meaning |
 |---|---|
 | `Pending` | Resource accepted; reconciliation not yet started. |
-| `Selecting` | Backend candidates are being evaluated. |
+| `Selecting` | Backend candidates are being evaluated (`mode=run` \| `mode=select`). |
 | `Transpiling` | Circuit is being transpiled for candidate or selected backend. |
-| `Submitting` | Provider submission is being attempted. |
-| `Running` | Provider job is active. |
-| `Rendering` | Controller is calling the executor's `DrawCircuit` RPC (only `mode=draw`). |
-| `Succeeded` | Selection, execution, or rendering completed successfully. |
+| `Submitting` | Provider submission is being attempted (`mode=run`). |
+| `Running` | Provider job is active (`mode=run`). |
+| `Rendering` | Controller is calling the executor's `DrawCircuit` RPC (`mode=draw`). |
+| `Scheduling` | Controller is calling the executor's `ScheduleCircuit` RPC (`mode=schedule`). |
+| `Succeeded` | Selection, execution, rendering, or scheduling completed successfully. |
 | `Failed` | Terminal failure. |
 
 ```mermaid
@@ -372,17 +373,20 @@ stateDiagram-v2
     [*] --> Pending
     Pending --> Selecting: mode=run | mode=select
     Pending --> Rendering: mode=draw
+    Pending --> Scheduling: mode=schedule
     Selecting --> Transpiling
     Transpiling --> Submitting: mode=run
     Transpiling --> Succeeded: mode=select
     Submitting --> Running
     Running --> Succeeded
     Rendering --> Succeeded
+    Scheduling --> Succeeded
     Selecting --> Failed
     Transpiling --> Failed
     Submitting --> Failed
     Running --> Failed
     Rendering --> Failed
+    Scheduling --> Failed
 ```
 
 ### 5.2 Conditions
@@ -397,8 +401,9 @@ Recommended condition types:
 | `Validated` | Static validation succeeded. |
 | `Selected` | A backend was selected. |
 | `Submitted` | A provider job was submitted. |
-| `Rendered` | The executor produced an ASCII drawing (only `mode=draw`). |
-| `Completed` | Execution, selection, or rendering completed. |
+| `Rendered` | The executor produced an ASCII drawing (`mode=draw`). |
+| `Scheduled` | The executor produced a per-instruction timeline (`mode=schedule`). |
+| `Completed` | Execution, selection, rendering, or scheduling completed. |
 | `Failed` | Terminal failure. |
 
 Recommended reasons:
