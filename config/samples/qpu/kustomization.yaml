@@ -62,6 +62,7 @@ resources:
 - fake-torino.yaml
 - fake-marrakesh.yaml
 - fake-belem.yaml
+- fake-fez.yaml
 # IBM Heron r2 fleet (real hardware, requires ibm-quantum-token Secret):
 - ibm-fez.yaml
 - ibm-kingston.yaml

@@ -1,0 +1,40 @@
+kubectl apply -f config/samples/qpu/fake-fez.yaml
+
+kubectl get qpu fake-fez -o yaml
+
+freeze -t github -x "kubectl get qpu fake-fez -o yaml" -o ./docs/qpu_get_fale-fez.png
+
+freeze -t github -x "kubectl get qpu" -o ./docs/qpu_get_all.png
+
+freeze -t github -x "cat config/samples/qpu/fake-fez.yaml" -o ./docs/qpu_manifest_fake-fez.png 
+
+freeze -t github -x "qcc draw examples/thesis/algorithms/shor.py" -o ./docs/circuit_draw_shor.png 
+
+freeze -t github -x "kubectl get circuits -l qcc.io/experiment=thesis" -o ./docs/circuit_get_filtered_1.png      
+
+freeze -t github -x "kubectl get circuits shor-lpdb7  -o yaml" -o ./docs/circuit_get_shor_lpdb7.png
+
+freeze -t github -x "qcc run examples/thesis/algorithms/shor.py --performance-test --algorithm shor --version v1 --experiment thesis-perf-test"  -o ./docs/circuit_run_shor_perf-test.png
+
+qcc run examples/thesis/algorithms/shor.py --algorithm shor --experiment thesis  --version v1 --backend ibm-fez --detach
+
+qcc run examples/thesis/algorithms/shor.py --algorithm shor --experiment thesis  --version v1 --backend ibm-kingston --detach
+
+qcc run examples/thesis/algorithms/shor.py --algorithm shor --experiment thesis  --version v1 --backend ibm-marrakesh --detach
+
+ freeze -t github -x "qcc run examples/thesis/algorithms/shor.py --algorithm shor --experiment thesis  --version v1 --backend ibm-fez --detach" -o ./docs/circuit_run_shor_fez_v1.png   
+ freeze --execute.timeout 15m  -t github -x "qcc run examples/thesis/algorithms/shor.py --algorithm shor --experiment thesis  --version v1 --backend ibm-fez --detach" -o ./docs/circuit_run_shor_fez_v1.png   
+ freeze --execute.timeout 15m  -t github -x "qcc get circuit shor-wffxg" -o ./docs/circuit_get_shor_fez_v1.png   
+freeze --execute.timeout 15m  -t github -x "qcc get circuits" -o ./docs/circuit_all_after_run_v1.png   
+ freeze --execute.timeout 15m  -t github -x "qcc get circuits shor-2vv42" -o ./docs/circuit_detached_v1.png   
+ freeze --execute.timeout 15m  -t github -x "qcc get circuits shor-wr9ds" -o ./docs/circuit_get_shor-wr9ds.png   
+
+
+kubectl create -f examples/thesis/circuits/shor-v2.yaml                                           
+
+kubectl create -f examples/thesis/circuits/shor-v3.yaml                                           
+
+ freeze --execute.timeout 15m  -t github -x "qcc get circuits shor-tuned-kingston-2nxgj" -o ./docs/circuit_get_shor-tuned.png   
+ freeze --execute.timeout 15m  -t github -x "qcc get circuits shor-tuned-kingston-62qzb" -o ./docs/circuit_get_shor_tuned_v3.png
+ freeze --execute.timeout 15m  -t github -x "qcc get circuits shor-tuned-kingston-nb7q9" -o ./docs/circuit_get_shor_tuned_v2.png
+  freeze --execute.timeout 15m  -t github -x "qcc get circuits" -o ./docs/final_get_all_circuits.png

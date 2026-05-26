@@ -1,0 +1,17 @@
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: fake-brisbane
+  labels:
+    qcc.io/demo: thesis
+spec:
+  # `local` resolves to the in-process Qiskit Aer adapter, which serves the
+  # fake_* calibration-faithful snapshots.  fake_brisbane is a 127-qubit
+  # Eagle r3 device whose frozen calibration (gate errors, T1/T2, coupling
+  # map) drives both selection scoring and the noise model used for results.
+  provider: local
+  backendName: fake_brisbane
+  kind: simulator
+  qubits: 127
+  capabilities:
+    maxShots: 100000

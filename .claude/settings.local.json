@@ -6,7 +6,8 @@
       "Bash(echo \"EXIT: $?\")",
       "Bash(kubectl rollout *)",
       "Bash(kubectl get *)",
-      "Bash(kubectl logs *)"
+      "Bash(kubectl logs *)",
+      "Bash(./dist/qcc --help)"
     ]
   }
 }

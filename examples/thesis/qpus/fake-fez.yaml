@@ -1,0 +1,19 @@
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  name: fake-fez
+  labels:
+    qcc.io/demo: thesis
+    qcc.io/family: heron-r2
+spec:
+  # `local` resolves to the in-process Qiskit Aer adapter, serving the
+  # fake_* calibration-faithful snapshots.  fake_fez is a 156-qubit
+  # Heron r2 device — sibling of the deployed real-hardware ibm-fez.
+  # Pairing fake-fez (frozen snapshot) against ibm-fez (live) is the
+  # Ch1 frozen-vs-live calibration story on the same architecture.
+  provider: local
+  backendName: fake_fez
+  kind: simulator
+  qubits: 156
+  capabilities:
+    maxShots: 100000
