@@ -212,11 +212,11 @@ These observations support the Ch8 honest-assessment narrative directly.
 
 When uploading this pack to Claude Chat for thesis revision work, **do not zip the QCC repo** — drag in the specific files instead. Three uploads per session:
 
-1. **The 28 evidence PNGs** from this `docs/` directory (drag-and-drop the lot — Chat Mode handles multi-file image uploads natively).
+1. **The 31 evidence PNGs** from this `docs/` directory (drag-and-drop the lot — Chat Mode handles multi-file image uploads natively).
 2. **This `docs/README.md`** + **`docs/RUNBOOK.md`** as two markdown files. They carry the framing context: R5 reframe wording, image index with per-figure thesis-use guidance, the new findings, the Ch9 bullets in paste-ready form, the per-chapter framing prompts below, and the command-by-figure mapping for the `\begin{listing}` blocks above each figure.
 3. **`msc-thesis.zip`** (current chapter state — the only file that still benefits from being a zip, since the chapters and `_staging/` reference each other across files).
 
-**Why no QCC zip?** The 28 figures plus the two markdown files carry everything Chat Mode needs for chapter-revision work; the rest of the QCC repo (code, manifests, full `docs/systems-design/` tree) is only needed for code-level questions, which belong in Claude Code in the QCC repo itself, not in chapter-writing Chat Mode sessions.
+**Why no QCC zip?** The 31 figures plus the two markdown files carry everything Chat Mode needs for chapter-revision work; the rest of the QCC repo (code, manifests, full `docs/systems-design/` tree) is only needed for code-level questions, which belong in Claude Code in the QCC repo itself, not in chapter-writing Chat Mode sessions.
 
 **Read this `docs/README.md` first** in the Chat Mode session — it carries the R5 reframe, the image index with thesis-use guidance, the empirical findings, and the Ch9 bullets in paste-ready form.
 

@@ -2,7 +2,7 @@
 
 This document describes the telemetry and operational surfaces that exist in the current implementation.
 
-## Short Version
+## The Short Version
 
 Today, QCC is observable primarily through:
 
@@ -11,8 +11,52 @@ Today, QCC is observable primarily through:
 - artifact `ConfigMap`s
 - controller-side `qcc_*` metrics
 - controller and executor logs
+- IBM job ID and tag linkage
 
 It is not yet observable through end-to-end traces or executor-side telemetry.
+
+## Signal Map
+
+```mermaid
+flowchart TB
+    Controller["qcc-controller"] --> Status["Circuit.status / QPU.status"]
+    Controller --> Artifacts["Artifact ConfigMaps"]
+    Controller --> Metrics["qcc_* metrics"]
+    Metrics --> OTLP["OTLP Collector"]
+    OTLP --> Prom["Prometheus"]
+    Prom --> Graf["Grafana"]
+
+    Executor["qcc-executor"] --> ELogs["executor logs"]
+    Executor --> Provider["Aer / IBM"]
+    Provider --> Linkage["provider job id / IBM tags"]
+
+    User["qcc / kubectl"] --> Status
+    User --> Artifacts
+    User --> Graf
+    User --> ELogs
+    User --> Linkage
+```
+
+Read that diagram as four separate observability surfaces:
+
+- status for per-resource truth
+- artifacts for large outputs
+- metrics for fleet-level comparison and dashboards
+- logs for adapter and RPC detail
+
+## Use The Right Surface For The Question
+
+| Question | Best surface | Why |
+|---|---|---|
+| Which phase is my circuit in? | `Circuit.status.phase` | primary per-run lifecycle fact |
+| Which backend was chosen? | `Circuit.status.selectedQPU` | exact controller decision |
+| Why did it fail? | `Circuit.status.conditions` | reason and message are persisted |
+| What exactly was executed? | `status.convertedRef` plus `status.transpile` | captures normalized source and transpile shape |
+| What does this backend look like? | `QPU.status` | calibration, qubits, medians, conditions |
+| How long do phases take? | `qcc_circuit_phase_duration_seconds_observed` and `qcc_circuit_phase_duration_seconds` | one is per-Circuit, one is aggregate |
+| Which IBM job matches this Circuit? | `status.providerJobId` and IBM tags | forward and reverse lookup |
+| How do multiple runs compare? | Grafana over `qcc_*` metrics | best surface for cross-run and cross-QPU views |
+| Why did the executor RPC fail? | controller and executor logs | status often compresses the error |
 
 ## What Exists Today
 
@@ -20,31 +64,31 @@ It is not yet observable through end-to-end traces or executor-side telemetry.
 |---|---|---|
 | `Circuit.status` | implemented | primary per-run lifecycle surface |
 | `QPU.status` | implemented | primary backend metadata surface |
-| Artifact `ConfigMap`s | implemented | drawings, converted QASM, schedules |
+| artifact `ConfigMap`s | implemented | drawings, converted QASM, schedules |
 | `qcc_*` metrics via OTLP | implemented | controller-side instrumentation |
 | Grafana dashboards | implemented | source-controlled dashboards under `deploy/grafana/` |
-| Cross-boundary IBM job tagging | implemented | Circuit UID stamped into IBM job tags |
-| Executor-side OTel instrumentation | not implemented | no Python-side metrics/traces yet |
-| Real distributed tracing | scaffolded only | tracer provider skeleton, no active exporter path in use |
+| cross-boundary IBM job tagging | implemented | Circuit UID stamped into IBM job tags |
+| executor-side OTel instrumentation | not implemented | no Python-side metrics or traces |
+| real distributed tracing | scaffolded only | tracer provider skeleton, no active exporter path |
 | Kubernetes `Event` emission | not implemented | docs and RBAC mention it, runtime does not emit them today |
-| Direct scrape of controller-runtime built-ins | disabled by default | manifests exist but are not enabled in default deployment |
+| direct scrape of controller-runtime built-ins | disabled by default | manifests exist but are not enabled in the default deploy |
 
-## The Current Observability Model
+## Observability Model
 
-QCC is observable through three main channels.
+The current model is intentionally simple.
 
-### 1. Resource Status
+### 1. Resource status
 
 `Circuit.status` and `QPU.status` are the primary operational truth.
 
-Examples:
+Use them for:
 
-- current phase
+- phase
 - selected backend
 - provider job ID
 - transpile depth and gate counts
 - backend error medians
-- backend calibration timestamp
+- backend calibration time
 
 ### 2. Artifact `ConfigMap`s
 
@@ -52,36 +96,48 @@ Generated large payloads live in owned `ConfigMap`s and are read by the CLI.
 
 - ASCII drawings
 - converted OpenQASM 3
-- scheduled timelines
+- schedule timelines
 
 ### 3. Metrics
 
-The controller exports OTLP metrics to a collector.
+The controller exports OTLP metrics to a collector, then to Prometheus and Grafana.
 
-Pipeline:
-
-```text
-qcc-controller
-    -> OpenTelemetry SDK
-    -> OTLP/gRPC
-    -> OpenTelemetry Collector
-    -> Prometheus exporter
-    -> Prometheus scrape
-    -> Grafana dashboards
+```mermaid
+flowchart TB
+    Controller["qcc-controller"] --> SDK["OpenTelemetry SDK"]
+    SDK --> Collector["OTLP/gRPC -> OpenTelemetry Collector"]
+    Collector --> Exporter["Prometheus exporter"]
+    Exporter --> Prom["Prometheus scrape"]
+    Prom --> Graf["Grafana dashboards"]
 ```
 
-## Operational Questions And Where To Look
+### 4. Logs
 
-| Question | Best current surface |
-|---|---|
-| Which phase is my circuit in? | `Circuit.status.phase` |
-| Which backend was chosen? | `Circuit.status.selectedQPU` |
-| Why did it fail? | `Circuit.status.conditions` |
-| What exactly was run? | `status.convertedRef` for Qiskit inputs, plus `status.transpile` |
-| What did the backend look like? | `QPU.status` |
-| How long did phases take? | `qcc_circuit_phase_duration_seconds_observed` and `qcc_circuit_phase_duration_seconds` |
-| Which IBM job corresponds to this Circuit? | `status.providerJobId` and `qcc_circuit_info{provider_job_id=...}` |
-| Which Circuit produced this IBM job? | IBM job tag + `status.providerJobId` |
+Logs are still the best place for:
+
+- executor adapter exceptions
+- provider probe failures
+- RPC transport failures
+- Python-side stack traces
+
+## Operational Lookup Order
+
+When debugging one Circuit, this is the most useful sequence.
+
+```mermaid
+flowchart TD
+    Start["Circuit is failing or unclear"] --> Scope{"Single run or fleet trend?"}
+    Scope -->|single run| Status["Check Circuit.status and artifact refs"]
+    Scope -->|fleet trend| Dash["Check Grafana / Prometheus"]
+    Status --> Enough{"Reason is clear?"}
+    Dash --> Enough
+    Enough -->|no| Logs["Check controller and executor logs"]
+    Enough -->|yes| End["Stop"]
+    Logs --> IBM{"IBM hardware run?"}
+    IBM -->|yes| Link["Use providerJobId and IBM tags for cross-lookup"]
+    IBM -->|no| End
+    Link --> End
+```
 
 ## Circuit Metrics
 
@@ -99,7 +155,7 @@ qcc-controller
 - `qcc_circuits_total`
 - `qcc_circuit_phase_duration_seconds`
 
-### Circuit Metric Inventory
+### Circuit metric inventory
 
 | Metric | Type | Purpose |
 |---|---|---|
@@ -121,7 +177,7 @@ qcc-controller
 - `qcc_qpu_last_calibration_timestamp_seconds`
 - `qcc_qpu_condition`
 
-### QPU Metric Inventory
+### QPU metric inventory
 
 | Metric | Type | Purpose |
 |---|---|---|
@@ -132,36 +188,23 @@ qcc-controller
 | `qcc_qpu_last_calibration_timestamp_seconds` | observable gauge | calibration freshness |
 | `qcc_qpu_condition` | observable gauge | KSM-style condition matrix |
 
-## What The Metrics Mean
+## Dashboard And Evidence Pointers
 
-### Circuit-side
-
-- `qcc_circuit_info`: identity row for joins, with labels such as mode, source format, shots, qpu, and provider job ID
-- `qcc_circuit_transpile_depth`: post-transpile depth
-- `qcc_circuit_transpile_gates`: gate counts split by `kind=single_qubit|two_qubit|total`
-- `qcc_circuit_result_count`: per-bitstring result counts
-- `qcc_circuit_phase_duration_seconds_observed`: per-Circuit phase durations derived from condition timestamps
-- `qcc_circuit_usage_seconds`: hardware-reported billable compute time when available
-- `qcc_circuits_total`: phase-transition counter
-- `qcc_circuit_phase_duration_seconds`: fleet-level histogram of phase durations
-
-### QPU-side
-
-- `qcc_qpu_info`: identity row for joins
-- `qcc_qpu_operation_error_median`: median 1Q, 2Q, and readout error rates
-- `qcc_qpu_operation_duration_median_seconds`: median 1Q and 2Q gate durations
-- `qcc_qpu_coherence_seconds`: T1 and T2 in seconds
-- `qcc_qpu_last_calibration_timestamp_seconds`: last calibration Unix timestamp
-- `qcc_qpu_condition`: KSM-style condition matrix
-
-## Dashboards
-
-Dashboard manifests live here:
+The dashboard manifests live here:
 
 - [`../deploy/grafana/qcc-circuit-dashboard.yaml`](../deploy/grafana/qcc-circuit-dashboard.yaml)
 - [`../deploy/grafana/qcc-qpu-dashboard.yaml`](../deploy/grafana/qcc-qpu-dashboard.yaml)
 
-The platform deployment values for Prometheus, Tempo, and the collector live under [`../deploy/platform/`](../deploy/platform).
+If you want concrete examples of what those dashboards look like, use the captured screenshots in `../docs/`:
+
+- [`../docs/grafana_qpu_availability.png`](../docs/grafana_qpu_availability.png): fleet-level QPU readiness and availability
+- [`../docs/grafana_qpu_coherence.png`](../docs/grafana_qpu_coherence.png): coherence and family comparison view
+- [`../docs/grafana_qcc_qpu_metrics.png`](../docs/grafana_qcc_qpu_metrics.png): QPU metric inventory in Grafana Explore
+- [`../docs/grafana_qcc_circuit_metrics.png`](../docs/grafana_qcc_circuit_metrics.png): Circuit metric inventory in Grafana Explore
+- [`../docs/grafana_circuit_provider_job_link.png`](../docs/grafana_circuit_provider_job_link.png): reverse linkage from dashboard to provider job ID
+- [`../docs/grafana_circuit_get_shor_tuned_v2.png`](../docs/grafana_circuit_get_shor_tuned_v2.png): one real Circuit detail view
+
+For the full evidence narrative behind those screenshots, read [`../docs/README.md`](../docs/README.md) and [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md).
 
 ## Logs
 
@@ -182,11 +225,11 @@ Use logs when:
 - the executor RPC failed transiently
 - backend probing failed
 - a provider-specific adapter raised an exception
-- you need details not stored in CR status
+- you need detail not stored in CR status
 
 ## Cross-Boundary Identity
 
-QCC exposes both sides of the "which Kubernetes run produced which provider job?" problem.
+QCC solves the "which Kubernetes run produced which provider job?" question in both directions.
 
 ### Forward linkage
 
@@ -202,33 +245,16 @@ The controller stores the provider job ID in:
 
 This makes both Kubernetes-side and provider-side lookup practical.
 
-## What Is Not There Yet
+## Missing Observability Surfaces
 
-### No real traces
+The shipped/partial/absent matrix lives in the implementation status section in [`README.md`](./README.md#implementation-status). Observability-specific gaps are:
 
-The repository has tracing scaffolding, but the useful end-to-end trace path is not active yet.
-
-### No executor-side telemetry
-
-The Python executor currently does not emit its own OpenTelemetry metrics or traces.
-
-### No Kubernetes Events
-
-The code does not currently use an event recorder. Operational visibility is therefore status-and-metrics-centric.
-
-### No default controller-runtime metrics scrape
-
-The default deployment enables the controller's metrics endpoint, but the direct Prometheus scrape route for `controller_runtime_*`, `go_*`, and `process_*` is intentionally not wired in by default.
-
-## Practical Reading Order
-
-When debugging a Circuit today, the most useful sequence is:
-
-1. `qcc get circuit <name>`
-2. `kubectl get circuit <name> -o yaml`
-3. `qcc get circuit <name> --qasm`, `--draw`, or `--schedule` when relevant
-4. Grafana dashboards for trend and comparison views
-5. controller and executor logs
+| Surface | Current state |
+|---|---|
+| end-to-end traces | scaffolding exists, useful trace export is not active |
+| executor-side telemetry | Python executor does not emit OTel metrics or traces |
+| Kubernetes Events | controller does not currently record Events |
+| controller-runtime built-ins | endpoint exists, default scrape path is not wired |
 
 ## Debugging Playbook
 
@@ -253,7 +279,7 @@ Check:
 
 Check:
 
-- executor deployment env vars / secret
+- executor deployment env vars or secret
 - executor logs
 - whether the IBM QPU was marked available optimistically even though probing failed
 

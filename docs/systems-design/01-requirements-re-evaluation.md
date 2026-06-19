@@ -35,7 +35,7 @@ Each requirement gets four parts: **statement / source / acceptance criterion / 
 
 ### R2 — Cross-boundary observability using open standards at platform-operational scope
 
-- **Statement.** Instrument the classical–quantum boundary using cloud-native open-standard primitives: Kubernetes CRDs (status + Conditions + Events) for per-instance lifecycle observability, Prometheus-compatible metric exposition for aggregate behaviour, and a documented `qcc.*` metric vocabulary covering Kanazawa's L0–L3 layers (system, job, task).  Delegate L4 (domain) to workflow code.
+- **Statement.** Instrument the classical–quantum boundary using cloud-native open-standard primitives: Kubernetes CRDs (status + Conditions) for per-instance lifecycle observability, Prometheus-compatible metric exposition for aggregate behaviour, and a documented `qcc.*` metric vocabulary covering Kanazawa's L0–L3 layers (system, job, task).  Delegate L4 (domain) to workflow code. Kubernetes Events remain future polish, not shipped evidence.
 - **Source.** Seelam §III.E.2 specialised-node-exporters; Kanazawa §II metrics pyramid; Kanazawa OBJECTION 1 on workflow-specific L4.
 - **Acceptance criterion.** The `qcc.*` semantic conventions document (in `QCC-Observability.md` §5) specifies metric names, attributes, units, stability tiers, and cardinality discipline for L0–L3.  A reference implementation emits these from the controller (executor behaviour observable transitively via controller-runtime gRPC instrumentation).
 - **v2 reference.** `QCC-Observability.md` §4 (idiomatic principles), §5 (locked metric inventory), §10 (PromQL query patterns), §11 (dashboard sketch).
@@ -61,7 +61,7 @@ Each requirement gets four parts: **statement / source / acceptance criterion / 
 
 - **Statement.** When more than one QPU satisfies a circuit's hard constraints, selection uses live calibration data, layout fidelity estimates, and queue-state signals — not static configuration or first-come-first-served. The selection must be reproducible from the trace alone.
 - **Source.** Wilson 2020 (3–304% accuracy variance from drift); Murali 2019 (18× layout swing); Qonductor §3 p. 4 (38% spatial fidelity variance, ~100× queue imbalance); Seelam §III.E.2 ("system fidelities… must be provided accurately to compilers").
-- **Acceptance criterion.** The controller's selection step records on `Circuit.status.selectionSummary` the count of candidates evaluated, the selected backend's composite score, the calibration vintage used per candidate, and the per-candidate transpile-attempt results.  Decision is reconstructible from the CR + K8s Events trail.  Selection-related metrics (`qcc_qpu_*` for the inputs; `qcc_circuits_total{mode="select"}` for the outcomes) corroborate the per-instance record.
+- **Acceptance criterion.** The controller's selection step records on `Circuit.status.selectionSummary` the count of candidates evaluated, the selected backend's composite score, the calibration vintage used per candidate, and the per-candidate transpile-attempt results.  Decision is reconstructible from the CR status plus selection-related metrics (`qcc_qpu_*` for the inputs; `qcc_circuits_total{mode="select"}` for the outcomes).
 - **v2 reference.** §A.4 auto-selection mode, §E.4 five-move chain, §E.10 Python sketch, §M.6 selection attributes.
 - **Non-coverage.** NSGA-II Pareto-front simultaneous optimisation (Qonductor's territory; future work as alternative scoring policy). *(§L.3: "the 5-move accuracy chain is not optimal — only composable and observable".)*
 

@@ -184,7 +184,7 @@ flowchart LR
     end
 
     API <-->|watch / patch status| Controller
-    Controller --> Status[Status + Events on Circuit]
+    Controller --> Status[Status + artifact refs on Circuit]
 
     Executor -->|"submit / poll / fetch<br/>(IBM Quantum via qiskit-ibm-runtime; <br/>IonQ / Rigetti / IQM / AQT / QuEra via qiskit-braket-provider; ...)"| Provider[Quantum vendor<br/>hardware or simulator]
 
@@ -372,8 +372,8 @@ QCC observability should answer operational questions, not only expose raw data.
 
 | Question | Signal |
 |---|---|
-| What phase is the circuit in? | `Circuit.status.phase`, conditions, Kubernetes events. |
-| Why was a backend selected? | `Circuit.status.selectionSummary` + K8s Events (per-instance); `qcc_qpu_*` metrics (substrate state at time of selection). |
+| What phase is the circuit in? | `Circuit.status.phase` and conditions. |
+| Why was a backend selected? | `Circuit.status.selectionSummary` (per-instance); `qcc_qpu_*` metrics (substrate state at time of selection). |
 | Where did time go (this Circuit)? | `qcc_circuit_phase_duration_seconds_observed{circuit=…}` (persistent gauge derived from `conditions[].lastTransitionTime`) — or equivalently `kubectl describe circuit` for the raw conditions. |
 | Where did time go (across many Circuits)? | `qcc_circuit_phase_duration_seconds` histogram in Prometheus (synchronous; ideal for `histogram_quantile` fleet percentiles). |
 | Of the time spent in `Running`, how much was actual QPU compute? | `qcc_circuit_usage_seconds` (on-QPU) vs `qcc_circuit_phase_duration_seconds_observed{phase="Running"}` (wall-clock).  Their difference is the orchestration-overhead window — the Ch7 figure that quantifies the cost of going through QCC vs talking to the substrate directly. |
@@ -382,7 +382,7 @@ QCC observability should answer operational questions, not only expose raw data.
 | Is backend selection stable across calibration changes? | Repeated `mode=select` runs; same-backend rate; `qcc_qpu_last_calibration_timestamp_seconds`. |
 | How do runs of the same algorithm compare? | `qcc.io/algorithm` + `qcc.io/algorithm-version` labels on the Circuit propagate to metric labels; PromQL groups by `(algorithm, algorithm_version)`.  Reserved label convention in `QCC-API.md` §5.3. |
 
-The canonical observability design — locked metric inventory, idiomatic principles, cross-boundary identifier linkage, dashboards, query patterns — lives in `QCC-Observability.md`.  This thesis prototype's observability stack is **Prometheus metrics + K8s status/events/CRDs + cross-boundary identifier linkage via IBM `runtime_options.tags`**, intentionally without OpenTelemetry distributed tracing infrastructure (decision rationale: `QCC-Design-State.md` 2026-05-16 night entry).
+The canonical observability design — locked metric inventory, idiomatic principles, cross-boundary identifier linkage, dashboards, query patterns — lives in `QCC-Observability.md`.  This thesis prototype's observability stack is **Prometheus metrics + K8s status/conditions/CRDs + ConfigMap artifacts + cross-boundary identifier linkage via IBM `runtime_options.tags`**, intentionally without OpenTelemetry distributed tracing infrastructure (decision rationale: `QCC-Design-State.md` 2026-05-16 night entry). Kubernetes Events are deferred.
 
 ## 12. Failure model
 
@@ -464,7 +464,7 @@ QCC demonstrates architectural direction, not production completeness.
 
 ## 17. Thesis-safe summary
 
-> **What QCC is.** A cloud-native control-plane prototype for quantum circuit execution. Circuits and backends are Kubernetes resources; lifecycle is driven by an operator-pattern controller; vendor-specific quantum logic is delegated to a separately-deployed Python executor reached via in-cluster gRPC. The quantum–classical execution path is exposed through a Kubernetes-native observability surface — CRD status + conditions as the per-instance audit trail, K8s Events as the lifecycle narrative, Prometheus metrics in a documented `qcc.*` vocabulary for aggregate analysis, and a cross-boundary identifier convention (Circuit K8s UID stamped into vendor job-tags; vendor `provider_job_id` carried back as a metric label) for bidirectional QCC↔vendor lookup.
+> **What QCC is.** A cloud-native control-plane prototype for quantum circuit execution. Circuits and backends are Kubernetes resources; lifecycle is driven by an operator-pattern controller; vendor-specific quantum logic is delegated to a separately-deployed Python executor reached via in-cluster gRPC. The quantum–classical execution path is exposed through a Kubernetes-native observability surface — CRD status + conditions as the per-instance audit trail, ConfigMap artifacts for large outputs, Prometheus metrics in a documented `qcc.*` vocabulary for aggregate analysis, and a cross-boundary identifier convention (Circuit K8s UID stamped into vendor job-tags; vendor `provider_job_id` carried back as a metric label) for bidirectional QCC↔vendor lookup.
 >
 > **What QCC is not.** The thesis does not introduce a new quantum algorithm. It investigates how operational patterns from cloud-native systems and site-reliability engineering can be applied to the interface between classical infrastructure and quantum processing units.
 >

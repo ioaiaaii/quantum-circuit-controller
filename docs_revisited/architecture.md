@@ -1,170 +1,185 @@
 # Architecture
 
-This document describes the runtime shape of QCC as it is implemented today.
+This document explains the runtime shape of QCC as it is implemented today.
 
-## Design Summary
+## If You Remember Only Four Things
 
-QCC uses Kubernetes as the control-plane boundary and keeps orchestration separate from quantum-provider logic.
+- Kubernetes is the durable control-plane boundary.
+- The controller owns lifecycle and status, not quantum execution.
+- The executor owns Qiskit, adapters, provider submission, and generated artifacts.
+- The CLI talks only to Kubernetes, never directly to the executor or providers.
 
-- the controller owns CRD lifecycle, phase transitions, and status
-- the executor owns Qiskit, adapters, source conversion, scheduling, and provider submission
-- the CLI uses Kubernetes as the only user interface
+## System Topology
 
-This split is the core architectural decision in the implementation.
+The full topology is split into three narrow slices so each figure fits a
+portrait thesis page without hiding the implementation boundaries.
 
-## Components
+### Kubernetes Control Slice
 
-### 1. Kubernetes API
+```mermaid
+flowchart TB
+    User["User"] --> Client["qcc CLI<br/>kubectl / GitOps"]
+    Client --> API["Kubernetes API"]
+    API --> Desired["Desired state<br/>Circuit.spec<br/>QPU.spec"]
+    API --> Secret["IBM token Secret"]
+    Desired --> Controller["qcc-controller<br/>watch / read"]
+    Controller --> Observed["Observed state<br/>Circuit.status<br/>QPU.status"]
+    Controller --> Artifacts["Artifact ConfigMaps<br/>drawing / qasm / schedule"]
+```
 
-The Kubernetes API server is the durable control-plane boundary.
+### Executor Adapter Slice
 
-- `Circuit` is the execution request and execution-status resource
-- `QPU` is the backend registry and probed-backend metadata resource
-- large generated outputs are stored outside the CRs in owned `ConfigMap` artifacts
+```mermaid
+flowchart TB
+    Controller["qcc-controller"] --> Service["qcc-executor Service<br/>gRPC :9000"]
+    Service --> Servicer["executor servicer<br/>convert / draw / schedule / run"]
+    Servicer --> Registry["adapter registry<br/>QPU.spec.provider"]
+    Registry --> Paths["adapter paths<br/>local -> AerAdapter -> Aer / fake_*<br/>ibm -> IBMAdapter -> IBM Quantum<br/>future -> compatible adapter -> Qiskit/OpenQASM runtime"]
+    Secret["IBM token Secret"] -. env vars today .-> Paths
+```
 
-### 2. `qcc-controller`
+### Observability Slice
 
-The Go controller-manager lives under [`../cmd/qcc-controller/`](../cmd/qcc-controller).
+```mermaid
+flowchart TB
+    Controller["qcc-controller"] --> Metrics["qcc_* metrics"]
+    Metrics --> OTel["OpenTelemetry Collector"]
+    OTel --> Prom["Prometheus"]
+    Prom --> Graf["Grafana"]
+    OTel -. future traces .-> Tempo["Tempo"]
 
-It runs two reconcilers:
+    Controller --> Status["Circuit/QPU status<br/>artifact refs"]
+    Executor["qcc-executor"] --> Logs["executor logs"]
+    IBM["IBM Quantum"] --> Link["providerJobId<br/>Circuit UID tag"]
+```
 
-- `CircuitReconciler`: drives the `Circuit` phase machine
-- `QPUReconciler`: stamps QPU availability and probes backend metadata
+The controller never bypasses Kubernetes storage: it watches, reads, and patches `Circuit` and `QPU` resources through the Kubernetes API, and it publishes bulky outputs through owned artifact `ConfigMap`s. The adapter registry dispatches by `QPU.spec.provider`; each adapter implements the same executor contract for inspection, execution, status polling, and result normalization. The observability stack is optional for local development, but it is part of the evaluated system: controller-side `qcc_*` metrics flow through the OpenTelemetry Collector into Prometheus and Grafana. The Python executor does not emit OTel telemetry today; it is visible through controller status, metrics, and logs.
 
-The controller never imports Qiskit or vendor SDKs. It delegates those concerns to the executor over gRPC.
+## Component Roles
 
-### 3. `qcc-executor`
-
-The Python executor lives under [`../qcc-executor/`](../qcc-executor).
-
-It owns:
-
-- source parsing and conversion
-- ASCII drawing
-- scheduled-timeline generation
-- backend adapter dispatch
-- transpilation
-- provider submission and result retrieval
-
-The executor is deployed as its own `Deployment` plus a ClusterIP `Service`.
-
-### 4. `qcc` CLI
-
-The CLI lives under [`../cmd/qcc/`](../cmd/qcc/).
-
-It talks only to Kubernetes:
-
-- `qcc run` creates a `Circuit`
-- `qcc draw` creates a short-lived `Circuit` with `mode=draw`
-- `qcc schedule` creates a short-lived `Circuit` with `mode=schedule`
-- `qcc get` reads CR status and artifact `ConfigMap`s
-
-The CLI never dials the executor directly.
-
-### 5. Optional Observability Stack
-
-The controller can export OTLP metrics to an OpenTelemetry Collector, then to Prometheus and Grafana.
-
-Values and manifests for the local observability stack live in [`../deploy/platform/`](../deploy/platform).
-
-## Component Responsibilities
-
-| Component | Responsible for | Explicitly not responsible for |
+| Component | Owns | Does not own |
 |---|---|---|
 | Kubernetes API | durable resource state, status persistence, artifact discovery | quantum execution logic |
-| `qcc-controller` | reconciliation, phase machine, status updates, QPU probing, metric emission | Qiskit calls, provider SDKs |
-| `qcc-executor` | source loading, conversion, drawing, scheduling, transpilation, adapter dispatch, provider submission | CRD reconciliation, Kubernetes watch logic |
-| `qcc` CLI | user submission and inspection via Kubernetes | direct provider access, direct executor access |
+| `qcc-controller` | reconciliation, phase machine, status updates, QPU probing, metrics | Qiskit calls, provider SDKs |
+| `qcc-executor` | source conversion, drawing, scheduling, transpilation, adapter dispatch, provider submission | CRD reconciliation, Kubernetes watch logic |
+| `qcc` CLI | submit and inspect through Kubernetes | direct provider access, direct executor access |
 
-## High-Level Runtime Topology
+## The Three State Surfaces
 
-```mermaid
-flowchart LR
-    User["User / qcc CLI"] --> API["Kubernetes API"]
-    API --> Circuit["Circuit CRs"]
-    API --> QPU["QPU CRs"]
-    API --> Artifact["Artifact ConfigMaps"]
-    API --> Controller["qcc-controller (Go)"]
-    Controller --> ExecSvc["qcc-executor Service"]
-    ExecSvc --> Executor["qcc-executor (Python)"]
-    Executor --> Local["Aer / fake_* / aer_statevector"]
-    Executor --> IBM["IBM Quantum"]
-    Controller -. OTLP .-> Obs["Collector / Prometheus / Grafana"]
-```
-
-## Backend Adapters
-
-The executor dispatches by `QPU.spec.provider`.
-
-Implemented today:
-
-- `local` or empty provider -> `AerAdapter`
-- `ibm` -> `IBMAdapter`
-
-`AerAdapter` supports:
-
-- generic `aer_simulator`
-- method-pinned variants such as `aer_statevector`
-- fake IBM calibration snapshots such as `fake_brisbane`
-
-`IBMAdapter` supports:
-
-- real IBM Quantum backends via `QiskitRuntimeService`
-- async submission and polling for queued hardware jobs
-
-Not implemented today:
-
-- QRMI
-- CUDA-Q
-- generic multi-provider adapters beyond the current IBM path
-
-## End-To-End Run Flow
-
-The most important runtime path is `mode=run`.
+The cleanest way to understand QCC is to separate user intent, backend facts, and execution outcome.
 
 ```mermaid
-sequenceDiagram
-    participant User as User / qcc
-    participant API as Kubernetes API
-    participant Ctl as qcc-controller
-    participant Exec as qcc-executor
-    participant Provider as Aer or IBM
-
-    User->>API: Create Circuit
-    Ctl->>API: Read Circuit
-    Ctl->>API: List QPUs
-    Ctl->>API: Patch status.selectedQPU + phase
-
-    alt simulator backend
-        Ctl->>Exec: RunCircuit
-        Exec->>Provider: transpile + run + fetch
-        Provider-->>Exec: counts/result
-        Exec-->>Ctl: results + transpile metadata
-    else hardware backend
-        Ctl->>Exec: SubmitTask
-        Exec->>Provider: submit job
-        Provider-->>Exec: provider job id
-        Exec-->>Ctl: task id / provider job id
-        loop until terminal
-            Ctl->>Exec: WatchTask
-            Exec->>Provider: poll status
-            Provider-->>Exec: queued/running/done
-            Exec-->>Ctl: task status
-        end
-        Ctl->>Exec: FetchTaskResult
-        Exec->>Provider: fetch result
-        Provider-->>Exec: counts/result
-        Exec-->>Ctl: counts + usage seconds
-    end
-
-    Ctl->>API: Patch final Circuit status
+flowchart TB
+    Intent["Circuit.spec<br/>source / mode / selector / shots"] --> Controller["CircuitReconciler"]
+    Registry["QPU.spec<br/>provider / backend / kind / caps"] --> Controller
+    Facts["QPU.status<br/>qubits / calibration / medians / conditions"] --> Controller
+    Controller --> Exec["qcc-executor"]
+    Exec --> Provider["Aer or IBM"]
+    Exec --> Controller
+    Controller --> Outcome["Circuit.status<br/>phase / selectedQPU / providerJobId / results / refs"]
+    Controller --> Artifacts["Artifact ConfigMaps<br/>drawing / qasm / schedule"]
 ```
 
-## Circuit Lifecycle
+Read that diagram as:
+
+- `Circuit.spec` says what the user wants
+- `QPU.spec` and `QPU.status` say what backends exist and what they look like
+- `Circuit.status` says what happened
+
+## Runtime Boundary Split
+
+### Control plane
+
+The control plane is everything that reasons in Kubernetes terms:
+
+- `Circuit` and `QPU` resources
+- reconciliation
+- status transitions
+- artifact references
+- controller-side metrics
+
+### Execution plane
+
+The execution plane is everything that reasons in Qiskit/provider terms:
+
+- source parsing
+- OpenQASM conversion
+- ASCII drawing
+- schedule generation
+- transpilation
+- provider submission
+- result retrieval
+
+This split is the main architectural decision in the repo.
+
+## Backend Adapter Boundary
+
+The backend adapter is the portability seam. Everything provider-specific stays inside the Python executor; the controller continues to speak the same Kubernetes and gRPC vocabulary.
+
+```mermaid
+flowchart TB
+    Controller["qcc-controller"] --> RPC["executor gRPC contract"]
+    RPC --> Registry["adapter registry<br/>provider string"]
+    Registry --> Shipped["shipped paths<br/>local -> AerAdapter -> Aer / fake_*<br/>ibm -> IBMAdapter -> IBM Quantum"]
+    Registry -. future .-> Future["future adapter paths<br/>Qiskit provider adapter<br/>OpenQASM runtime adapter<br/>QRMI / CUDA-Q / vendor-direct"]
+```
+
+Current runtime adapters are only `local` and `ibm`. Future adapter work should be described as one of three categories:
+
+- Qiskit-provider adapters: wrap a `qiskit.providers.Backend`/job-style provider and reuse Qiskit's transpilation and async job model.
+- OpenQASM runtime adapters: send OpenQASM payloads to a backend that is not exposed as a Qiskit provider, then normalize status and counts back into QCC.
+- Alternative substrate adapters: QRMI, CUDA-Q, or vendor-direct integrations that implement the same executor contract without changing the controller.
+
+Supporting Qiskit or OpenQASM is necessary for a candidate backend, but not sufficient by itself. A QCC adapter must also implement backend inspection, capability reporting, submit/watch/fetch semantics, error mapping, and result normalization into `Circuit.status.results`.
+
+## Mode Map
+
+Each `Circuit.spec.mode` activates a different slice of the system.
+
+```mermaid
+flowchart TD
+    Start["Circuit created"] --> Mode{"spec.mode"}
+
+    Mode --> Run["run"]
+    Mode --> Select["select"]
+    Mode --> Draw["draw"]
+    Mode --> Schedule["schedule"]
+
+    Run --> Choose["controller selects QPU"]
+    Choose --> Kind{"selected QPU kind"}
+    Kind -->|simulator| Sync["RunCircuit"]
+    Kind -->|hardware| Async["SubmitTask -> WatchTask -> FetchTaskResult"]
+    Sync --> RunOut["status.results<br/>optional convertedRef"]
+    Async --> RunOut
+
+    Select --> SelectOut["status.selectedQPU<br/>status.selectionSummary"]
+    Draw --> DrawRPC["DrawCircuit"]
+    DrawRPC --> DrawOut["status.drawingRef"]
+    Schedule --> SchedRPC["ScheduleCircuit"]
+    SchedRPC --> SchedOut["status.scheduleRef"]
+```
+
+## End-To-End `run` Flow
+
+The most important path is still `mode=run`.
+
+```mermaid
+flowchart TB
+    Create["Circuit created"] --> Select["controller selects QPU"]
+    Select --> Kind{"selected kind"}
+    Kind -->|simulator| Sync["RunCircuit"]
+    Sync --> Sim["Aer / fake_*<br/>transpile + run + fetch"]
+    Sim --> Done["patch Circuit.status<br/>results + transpile metadata"]
+    Kind -->|hardware| Submit["SubmitTask"]
+    Submit --> Job["store providerJobId"]
+    Job --> Watch["WatchTask on later reconciles"]
+    Watch --> Fetch["FetchTaskResult"]
+    Fetch --> Done
+```
+
+## Lifecycle Phases
 
 The controller uses an explicit phase machine.
-
-Possible phases:
 
 - `Pending`
 - `Selecting`
@@ -176,125 +191,62 @@ Possible phases:
 - `Succeeded`
 - `Failed`
 
-The path depends on `Circuit.spec.mode`.
+Which subset appears depends on `Circuit.spec.mode`.
 
-## Mode And RPC Matrix
+## Backend Selection Today
 
-| Mode | Main phases | Executor RPCs | Artifact output |
-|---|---|---|---|
-| `run` | `Pending -> Selecting -> Transpiling -> Submitting -> (Running) -> Succeeded/Failed` | `RunCircuit` or `SubmitTask` + `WatchTask` + `FetchTaskResult` | optional `convertedRef` |
-| `select` | `Pending -> Selecting -> Transpiling -> Succeeded/Failed` | none | none |
-| `draw` | `Rendering -> Succeeded/Failed` | `DrawCircuit` | `drawingRef` |
-| `schedule` | `Pending -> Selecting -> Scheduling -> Succeeded/Failed` | `ScheduleCircuit` | `scheduleRef` |
+The original design docs describe a richer selection story than the current runtime actually implements. The implementation is simpler.
 
-## Mode Flows
+```mermaid
+flowchart TB
+    Input["Circuit + QPU list"] --> Filter["Hard filter<br/>availability / provider / backend / kind / minQubits / maxShots"]
+    Filter --> Pick["Pick first eligible QPU"]
+    Pick --> Result["status.selectedQPU"]
+    Filter -. ignored today .-> FutureA["allowedQPURefs / region<br/>declared but not enforced"]
+    Pick -. missing stage .-> FutureB["queue / calibration / scoring<br/>not implemented yet"]
+```
 
-### `mode=run`
+What is enforced today:
 
-`run` is the main execution path.
-
-1. The controller validates the `Circuit`.
-2. It enumerates `QPU` resources and filters eligible candidates.
-3. It stores the chosen QPU in `status.selectedQPU`.
-4. It dispatches to the executor.
-
-Branch by backend kind:
-
-- simulator QPU -> synchronous `RunCircuit`
-- hardware QPU -> async `SubmitTask`, then later `WatchTask` and `FetchTaskResult`
-
-On success, results land inline in `status.results`.
-
-If the source was Qiskit-Python, the converted OpenQASM 3 is also stored in a sibling `ConfigMap` and referenced by `status.convertedRef`.
-
-### Sync vs Async Execution
-
-QCC has two execution styles:
-
-| Path | Used for | Why |
-|---|---|---|
-| synchronous `RunCircuit` | simulators | simple, fast, returns in one reconcile |
-| async submit/watch/fetch | hardware backends | real hardware queues for minutes; blocking a reconcile would be the wrong controller behavior |
-
-### `mode=select`
-
-`select` stops after controller-side eligibility filtering.
-
-Today this is not a scoring system. It records the first eligible backend and completes successfully without submission.
-
-### `mode=draw`
-
-`draw` sends the source to the executor's draw path, stores the ASCII output in a `ConfigMap`, and sets `status.drawingRef`.
-
-### `mode=schedule`
-
-`schedule` resolves a backend, asks the executor to produce a backend-specific scheduled timeline, stores the JSON schedule in a `ConfigMap`, and sets `status.scheduleRef`.
-
-## QPU Lifecycle
-
-The `QPUReconciler` is much smaller than the `CircuitReconciler`.
-
-Its main responsibilities are:
-
-- determine coarse availability
-- probe backend metadata through the executor
-- write observed backend details into `QPU.status`
-
-Probe-enriched fields include:
-
-- qubit count
-- basis gates
-- coupling-map size
-- calibration timestamp
-- gate/readout error medians
-- coherence medians
-- instruction-duration medians
-- processor family metadata
-
-## Current Selection Behavior
-
-Selection is currently controller-side and intentionally simple.
-
-Implemented filters:
-
-- `status.availability == Available`
 - `backendSelector.provider`
 - `backendSelector.backendName`
 - `backendSelector.kind`
 - `backendSelector.minQubits`
 - `QPU.spec.capabilities.maxShots`
 
-Important current limitations:
+What is not enforced today:
 
-- `backendSelector.allowedQPURefs` is defined but ignored
-- `backendSelector.region` is defined but ignored
-- no queue-aware or calibration-aware scoring is active yet
+- `backendSelector.allowedQPURefs`
+- `backendSelector.region`
+- any queue-aware or calibration-aware scoring
 
-In practice, QCC's current backend-comparison feature is `qcc run --performance-test`, not the `select` mode.
+In practice, the shipped comparison feature is `qcc run --performance-test`, not the `select` mode.
 
-## Trust Boundaries
+## Sync Vs Async Execution
 
-### What the controller trusts
+| Path | Used for | Why |
+|---|---|---|
+| `RunCircuit` | simulators | quick and naturally synchronous |
+| `SubmitTask` / `WatchTask` / `FetchTaskResult` | hardware backends | real provider queues outlive one reconcile loop |
 
-- Kubernetes resource state
-- the executor's gRPC contract
-- probed backend metadata stored in `QPU.status`
+The async path is correct for hardware, but it is not yet restart-tolerant because task handles live in executor memory only.
 
-### What the executor trusts
+## QPU Lifecycle
 
-- resolved provider/backend information from the selected `QPU`
-- source bodies embedded in `Circuit.spec.source`
-- process-wide provider credentials from its deployment environment
+The `QPUReconciler` is smaller than the `CircuitReconciler`.
 
-### What the CLI trusts
+It mainly:
 
-- only the Kubernetes API
+- determines coarse availability
+- probes backend metadata through the executor
+- writes `QPU.status`
+- emits QPU-side metrics
 
-The CLI does not need direct network reach to the executor or providers.
+It does not run circuits.
 
 ## Artifact Model
 
-QCC deliberately keeps bulky generated data out of CR status.
+QCC keeps large generated payloads out of CR status on purpose.
 
 Artifacts are stored in owned `ConfigMap`s:
 
@@ -308,18 +260,18 @@ Each artifact is:
 - owned by the `Circuit`
 - garbage-collected with the `Circuit`
 
-## Important Runtime Caveats
+This is why `Circuit.status` stores references instead of large blobs.
 
-### No default QPUs
+## Trust Boundaries
 
-`make deploy` does not install any ready-to-use QPUs by itself. The operator-default QPU bundle is currently empty.
+| Actor | Main trust boundary |
+|---|---|
+| controller | Kubernetes state plus the executor gRPC contract |
+| executor | selected `QPU` metadata, source bodies, and deployment env credentials |
+| CLI | Kubernetes API only |
 
-Apply sample QPUs explicitly from [`../config/samples/qpu/`](../config/samples/qpu).
+The CLI does not need direct network access to the executor or IBM.
 
-### IBM availability is optimistic
+## Status Boundary
 
-IBM QPUs may show `Available` even when credentials are missing or backend probing failed. Those failures surface later during execution.
-
-### Async jobs are not restart-tolerant
-
-The executor keeps async task state in memory only. If the executor restarts, in-flight hardware jobs cannot currently be resumed from `status.providerJobId` alone.
+This page explains how the system is shaped. For the shipped/partial/absent matrix, read the implementation status section in [`README.md`](./README.md#implementation-status).

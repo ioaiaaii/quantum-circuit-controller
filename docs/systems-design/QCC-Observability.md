@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-QCC observability makes the quantum–classical execution path inspectable using cloud-native open standards. The thesis prototype demonstrates that circuit submission, backend selection, transpilation, provider submission, and result retrieval can be correlated through the canonical mid-2026 pipeline — **OTel SDK in the application + OTLP push to an OpenTelemetry Collector + storage in Prometheus/Tempo + visualization in Grafana** — combined with K8s-native artifacts (CRD `.status`, ConfigMaps, Events) for per-instance state.
+QCC observability makes the quantum–classical execution path inspectable using cloud-native open standards. The thesis prototype demonstrates that circuit submission, backend selection, transpilation, provider submission, and result retrieval can be correlated through the canonical mid-2026 pipeline — **OTel SDK in the application + OTLP push to an OpenTelemetry Collector + storage in Prometheus/Tempo + visualization in Grafana** — combined with K8s-native artifacts (CRD `.status` and ConfigMaps) for per-instance state.
 
 This document realises **R4 (observable execution lifecycle)** from `QCC-System-Design.md` §5.
 
@@ -17,7 +17,8 @@ This document realises **R4 (observable execution lifecycle)** from `QCC-System-
 | Layer | Status | What's there |
 |---|---|---|
 | **Application metrics** | ✅ shipped | 14 `qcc_*` metrics (8 Circuit + 6 QPU), OTel SDK → OTLP/gRPC → Collector → Prometheus :8889 → kube-prometheus-stack scrape. Cross-boundary identifier linkage via Circuit UID in IBM `runtime_options.tags` (forward) + `provider_job_id` as metric label (reverse). |
-| **K8s state & events** | ✅ shipped | `Circuit` / `QPU` `.status`, K8s Events, ConfigMap-backed artifacts (`drawingRef`, `convertedRef`, `scheduleRef`). Per-instance audit trail via `kubectl describe`. |
+| **K8s state** | ✅ shipped | `Circuit` / `QPU` `.status` and ConfigMap-backed artifacts (`drawingRef`, `convertedRef`, `scheduleRef`). Per-instance audit trail via `qcc get` and `kubectl get -o yaml`. |
+| **K8s Events** | 🪪 Ch9 | RBAC scaffolding exists, but the controller does not currently record Kubernetes Events. |
 | **Dashboards** | ✅ shipped | Two source-controlled Grafana ConfigMaps (`qcc-circuit-dashboard`, `qcc-qpu-dashboard`) with cascading template variables and sibling cross-links. See §11. |
 | **Distributed tracing** | 🪪 Ch9 | TracerProvider skeleton with no-op exporter at `internal/observability/traces/provider.go`. Flip to `otlptracegrpc` is config-only; Tempo exporter already deployed. |
 | **Executor-side instrumentation** | 🪪 Ch9 | `qcc-executor` (Python) emits no OTel today; observable transitively via the controller's view. |
@@ -44,7 +45,7 @@ Three distinct audiences ask different questions of QCC.  The observability surf
 | Question | Primary signal | Source |
 |---|---|---|
 | What is the Circuit doing right now? | `Circuit.status.phase` + Conditions | K8s API |
-| Why was this backend selected? | `Circuit.status.selectionSummary` + K8s Events | K8s API |
+| Why was this backend selected? | `Circuit.status.selectionSummary` | K8s API |
 | Where did latency accumulate inside one Circuit? | `qcc_circuit_phase_duration_seconds_observed{circuit=…}` (persistent gauge from conditions) | Prometheus |
 | Where did latency accumulate across many Circuits? | `qcc_circuit_phase_duration_seconds` histogram (fleet-wide percentiles) | Prometheus |
 | How much actual QPU compute did this Circuit use vs orchestration overhead? | `qcc_circuit_usage_seconds` (on-QPU) vs `qcc_circuit_phase_duration_seconds_observed{phase="Running"}` (wall-clock) | Prometheus |
@@ -59,13 +60,13 @@ Three distinct audiences ask different questions of QCC.  The observability surf
 | Which IBM job did this Circuit produce? | `Circuit.status.providerJobId` (or `qcc_circuit_info{circuit=…}.provider_job_id`) | K8s API or Prometheus |
 | Which Circuit owned IBM job `<id>`? | `qcc_circuit_info{provider_job_id="<id>"}` (reverse-linkage via §6) | Prometheus |
 
-**Note**: the per-Circuit / aggregate split has softened compared to earlier designs.  Per-Circuit *state changes and event narrative* still come from the K8s API (`kubectl describe`, condition transitions, K8s Events) — that's the authoritative audit trail.  But per-Circuit *quantitative facts* — phase durations, gate counts, outcome distributions, QPU time — are answerable from Prometheus too, because the metric label set carries `circuit` and the new `qcc_circuit_phase_duration_seconds_observed` gauge is derived from CR state on every scrape.  The two surfaces complement each other; §10 shows query patterns for each.
+**Note**: the per-Circuit / aggregate split has softened compared to earlier designs.  Per-Circuit state still comes from the K8s API (`qcc get`, `kubectl get -o yaml`, condition transitions) — that's the authoritative audit trail.  Per-Circuit *quantitative facts* — phase durations, gate counts, outcome distributions, QPU time — are answerable from Prometheus too, because the metric label set carries `circuit` and the new `qcc_circuit_phase_duration_seconds_observed` gauge is derived from CR state on every scrape.  The two surfaces complement each other; §10 shows query patterns for each.
 
 ---
 
 ## 3. The observability stack
 
-QCC's observability surface combines K8s-native primitives (CRD status, Events) with the canonical OpenTelemetry pipeline (SDK → OTLP → Collector → storage → Grafana).  Both signal flows map to Kanazawa et al.'s 5-layer pyramid (Kanazawa et al. 2025, "Observability Architecture for QCSC Workflows").
+QCC's observability surface combines K8s-native primitives (CRD status and ConfigMap artifacts) with the canonical OpenTelemetry pipeline (SDK → OTLP → Collector → storage → Grafana).  Both signal flows map to Kanazawa et al.'s 5-layer pyramid (Kanazawa et al. 2025, "Observability Architecture for QCSC Workflows").
 
 ```mermaid
 flowchart TD
@@ -75,7 +76,6 @@ flowchart TD
       QCC -- OTel SDK --> SDK_T[Traces: TracerProvider skeleton, no-op today]
       QCC -- slog --> StdoutLogs[stdout JSON logs]
       QCC -- updates --> CRD[Circuit / QPU .status]
-      QCC -- records --> KEvents[K8s Events]
       QCC -- /metrics --> CRMetrics[controller-runtime built-ins]
     end
 
@@ -95,7 +95,6 @@ flowchart TD
     Tempo --> Graf
 
     User[kubectl + qcc CLI] --> CRD
-    User --> KEvents
     User --> StdoutLogs
 
     CRD -. reverse lookup via job_tags .-> IBM[IBM Quantum Console]
@@ -114,7 +113,7 @@ Both end up in the same Prometheus instance; Grafana queries one source.
 |---|---|---|---|
 | **L0 Hardware** | power, thermal — substrate-level facts | `qcc_qpu_*` metrics (qubits, gate errors, T1/T2, durations) — the *quantum-node-exporter* analog of Prometheus `node_exporter` for quantum hardware (Seelam et al. 2026, §III.E.2) | OTel SDK → OTLP → Collector → Prometheus → Grafana |
 | **L1 System** | CPU, memory, I/O, network | `controller_runtime_*` + `process_*` + `go_*` (free from controller-runtime) + kube-state-metrics + node-exporter (from kube-prometheus-stack) | Direct ServiceMonitor scrape → Prometheus |
-| **L2 Job** | job accounting, throughput | `qcc_circuits_total` counter (via OTel SDK) + K8s Events on Circuit | OTel SDK + K8s API |
+| **L2 Job** | job accounting, throughput | `qcc_circuits_total` counter via OTel SDK | OTel SDK |
 | **L3 Task** | task artifacts, wall-clock times | `Circuit.status` itself (transpile shape, results, providerJobId, Conditions with timestamps) | K8s API via `kubectl get circuit X -o yaml` |
 | **L4 Domain** | solver convergence, fidelity | Out of scope today; M2.5 outcome-quality work (Hellinger fidelity, TVD against `aer-statevector` reference) | future |
 
@@ -465,9 +464,9 @@ The identifier flows through the stack — bidirectionally.  That's the cross-la
 
 ---
 
-## 7. Kubernetes status and events
+## 7. Kubernetes status and deferred events
 
-Status is the durable user-facing state.  Events are the short-lived human-readable trail.  Both are L3 (task-level) per Kanazawa, stored on the CRD.
+Status is the durable user-facing state.  Kubernetes Events are not emitted by the current controller; they remain a Ch9 polish item.  The shipped per-instance audit trail is `Circuit.status`, `QPU.status`, artifact ConfigMaps, and controller/executor logs.
 
 ### 7.1 Status fields
 
@@ -486,7 +485,7 @@ Observability-relevant status fields (full schema in `QCC-API.md`):
 | `usageSeconds` | Substrate-reported billable compute time; source for `qcc_circuit_usage_seconds`.  Zero or omitted on simulator paths |
 | `drawingRef`, `convertedRef`, `scheduleRef` | Out-of-band ConfigMap artifact pointers |
 
-### 7.2 Event examples
+### 7.2 Event examples for future work
 
 ```text
 Normal  CircuitAccepted          Circuit accepted by QCC controller
@@ -498,7 +497,7 @@ Warning TranspilationFailed      Transpilation failed for backend ibm_lagos
 Warning ProviderSubmissionFailed Provider submission failed: authentication error
 ```
 
-Events flow into `kubectl describe circuit X` as a chronological trail, and into any K8s-events log aggregator (kubectl, Loki via the events-exporter pattern) for searchability.
+Once implemented, Events should flow into `kubectl describe circuit X` as a chronological trail and into any Kubernetes-events log aggregator for searchability.
 
 ---
 
@@ -583,7 +582,7 @@ Combined with K8s queries for the rest of per-instance history:
 ```bash
 # Full per-instance view
 qcc get circuit bell-state-5dcl8                        # phase, QPU, transpile shape, counts
-kubectl describe circuit bell-state-5dcl8               # Conditions + Events timeline
+kubectl get circuit bell-state-5dcl8 -o yaml            # Conditions + status timestamps
 kubectl logs deploy/qcc-controller | grep bell-state-5dcl8  # reconcile log lines
 ```
 

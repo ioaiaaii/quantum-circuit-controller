@@ -2,28 +2,58 @@
 
 This document summarizes the current QCC API from the implementation point of view.
 
-## Intent
+## The API In One View
 
-The API is intentionally small:
+QCC intentionally exposes only two first-class resources:
 
-- `Circuit` is the user-facing execution request
-- `QPU` is the backend registry and metadata surface
+- `Circuit`: one execution, draw, schedule, or selection request
+- `QPU`: one backend profile plus observed backend metadata
 
-Everything else hangs off those two resources.
+Everything else is derived from those two.
 
-## Resources
+```mermaid
+flowchart TB
+    CLI["qcc / kubectl"] --> Specs["desired state<br/>Circuit.spec + QPU.spec"]
+    Specs --> Runtime["controller + executor"]
+    QPUStatus["QPU.status<br/>backend facts"] --> Runtime
+    Runtime --> CircuitStatus["Circuit.status<br/>phase / selectedQPU / results"]
+    Runtime --> Artifacts["ConfigMap artifacts<br/>drawing / qasm / schedule"]
+    CircuitStatus --> CLI
+    Artifacts --> CLI
+```
+
+The important split is:
+
+- `spec` expresses desired state or declared backend identity
+- `status` expresses observed state and outcomes
+- artifacts hold bulky generated payloads
+
+## Resource Summary
 
 ### `Circuit`
 
-- Group/version: `qcc.io/v1alpha1`
-- Scope: namespaced
-- Purpose: one circuit request and its lifecycle
+- group/version: `qcc.io/v1alpha1`
+- scope: namespaced
+- purpose: one circuit request and its lifecycle
 
 ### `QPU`
 
-- Group/version: `qcc.io/v1alpha1`
-- Scope: cluster-scoped
-- Purpose: one registered backend profile and its observed metadata
+- group/version: `qcc.io/v1alpha1`
+- scope: cluster-scoped
+- purpose: one registered backend profile and its observed metadata
+
+## Who Writes What
+
+| Surface | Main writer | What it means |
+|---|---|---|
+| `Circuit.spec` | user or `qcc` CLI | desired circuit operation |
+| `Circuit.metadata.labels` | user, CLI, and controller | grouping and provenance |
+| `Circuit.status` | controller | what happened to the request |
+| artifact `ConfigMap`s | controller | large generated outputs referenced from status |
+| `QPU.spec` | user or sample manifest | declared backend identity |
+| `QPU.status` | controller | probed backend facts and availability |
+
+The executor influences status, but it does not write Kubernetes objects directly.
 
 ## `Circuit`
 
@@ -36,15 +66,30 @@ Everything else hangs off those two resources.
 | `spec.mode` | `run`, `select`, `draw`, `schedule` | implemented |
 | `spec.shots` | execution repetitions for `run` | implemented |
 | `spec.backendSelector.provider` | provider filter | implemented |
-| `spec.backendSelector.backendName` | exact QPU/backend target | implemented |
+| `spec.backendSelector.backendName` | exact backend target | implemented |
 | `spec.backendSelector.kind` | `hardware` or `simulator` | implemented |
 | `spec.backendSelector.minQubits` | minimum qubit requirement | implemented |
 | `spec.backendSelector.allowedQPURefs` | QPU allow-list | schema exists, not enforced yet |
 | `spec.backendSelector.region` | region/locality hint | schema exists, not enforced yet |
 | `spec.optimizationLevel` | transpilation effort knob | implemented |
-| `spec.timeoutSeconds` | execution timeout hint passed to executor | implemented in wire model, not a full controller-side timeout policy |
+| `spec.timeoutSeconds` | execution timeout hint | present in wire model; not a full controller timeout policy |
 | `spec.transpile` | opaque Qiskit transpile kwargs | implemented |
 | `spec.execute` | opaque adapter execution kwargs | implemented |
+
+### Circuit Mode Map
+
+```mermaid
+flowchart TD
+    Mode{"Circuit.spec.mode"} --> Run["run"]
+    Mode --> Select["select"]
+    Mode --> Draw["draw"]
+    Mode --> Schedule["schedule"]
+
+    Run --> RunOut["results inline in status<br/>optional convertedRef"]
+    Select --> SelectOut["selectedQPU and selectionSummary"]
+    Draw --> DrawOut["drawingRef"]
+    Schedule --> SchedOut["scheduleRef"]
+```
 
 ### Example: `run`
 
@@ -110,6 +155,16 @@ spec:
 | `allowedQPURefs` | declared, not enforced |
 | `region` | declared, not enforced |
 
+### Status Layout
+
+QCC keeps small, structured facts on the CR and puts larger payloads into sibling artifacts.
+
+```mermaid
+flowchart TB
+    Output["Circuit outputs"] --> Status["Circuit.status<br/>phase / selectedQPU / providerJobId / results / refs"]
+    Output --> Artifact["Artifact ConfigMaps<br/>drawing / qasm / schedule"]
+```
+
 ### Status Fields
 
 | Field | Meaning |
@@ -139,7 +194,7 @@ status:
     "11": 512
 ```
 
-This is good enough for the current thesis-scale workloads and CLI experience. QCC does not currently externalize result histograms to a separate result object.
+This matches the current thesis-scale workloads and CLI UX. QCC does not currently externalize result histograms to a separate result object.
 
 ### Phases
 
@@ -186,7 +241,7 @@ QCC stores generated payloads in sibling `ConfigMap`s instead of CR status.
 | `convertedRef` | `data["qasm"]` |
 | `scheduleRef` | `data["schedule.json"]` |
 
-This is an implementation feature, not a side channel. The CLI reads these artifacts directly for `qcc get --draw`, `qcc get --qasm`, and `qcc get --schedule`.
+The CLI reads these artifacts directly for `qcc get --draw`, `qcc get --qasm`, and `qcc get --schedule`.
 
 ### Labels Used By The CLI And Controller
 
@@ -285,6 +340,23 @@ When `Circuit.spec.source.format=qiskit`, the executor executes the Python sourc
 
 The controller resolves the selected QPU by name, and the executor reads the provider/backend from the resolved `QPU`, not from free-form user strings alone.
 
+### Provider values and future adapters
+
+The runtime currently recognizes these provider values:
+
+| `QPU.spec.provider` | Meaning |
+|---|---|
+| empty or `local` | Qiskit Aer and `fake_*` simulator snapshots |
+| `ibm` | IBM Quantum through `qiskit-ibm-runtime` |
+
+Future providers should be documented as adapter implementations, not as schema changes. The intended extension paths are:
+
+- a generic Qiskit-provider adapter for ecosystems such as Amazon Braket via `qiskit-braket-provider`
+- OpenQASM runtime adapters for services that accept OpenQASM payloads directly
+- substrate-specific adapters such as QRMI, CUDA-Q, or vendor-direct SDKs
+
+The minimum contract is broader than accepting circuit text. A provider adapter must expose backend facts, submit/watch/fetch lifecycle behavior, error mapping, and normalized counts/results that the controller can persist in `Circuit.status`.
+
 ### Effective backend name
 
 If `QPU.spec.backendName` is empty, the code derives it from `metadata.name` by replacing dashes with underscores.
@@ -305,9 +377,9 @@ Treat `credentialSecretRef` as future-facing contract surface, not live behavior
 
 ## Current Contract Gaps
 
-These are important if you are treating the CRDs as a strict external contract.
+These matter if you are treating the CRDs as a strict external contract. The shipped/partial/absent matrix lives in the implementation status section in [`README.md`](./README.md#implementation-status).
 
-- `allowedQPURefs` and `region` are documented API fields but not enforced in controller-side backend selection yet
 - `QPU.spec.access.credentialSecretRef` is documented but not wired into executor credential loading
+- `allowedQPURefs` and `region` are documented API fields but not enforced in backend selection yet
 - `Circuit.status.traceId` is reserved but not populated
 - `queueDepth` and `lastError` exist on the `QPU` schema but are not central parts of the current runtime behavior

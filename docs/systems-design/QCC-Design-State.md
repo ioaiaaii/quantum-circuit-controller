@@ -444,7 +444,7 @@ Current scorecard reading: 46/56 items = **82% of thesis-critical scope**.  Rema
 
 Design-only pivot to **Prometheus metrics + cross-boundary identifier stamp**, not OpenTelemetry distributed tracing. Implementation cost (~8–11h, two languages, multi-reconcile trace propagation) was disproportionate to thesis value: the trace would mostly show what we already know (IBM queue wait dominates by orders of magnitude). Kanazawa doesn't require OTel — the paper names a 5-layer pyramid; the substrate is open. R4's "single trace context" is satisfied by a Circuit-UID stamp on IBM `runtime_options.tags` (~1h) without SDK weight.
 
-`QCC-Observability.md` became the canonical observability source-of-truth in this session; transitional artifacts (`M2-metrics-design.md`, `M2b-otel-tracing-plan.md`) deleted. R2/R4/R5 in `01-requirements-re-evaluation.md` reworded to drop preordained OTel framing. Kanazawa-pyramid mapping: L0 → `qcc_qpu_*`; L1 → controller-runtime built-ins; L2 → `qcc_circuits_total` + K8s Events; L3 → `Circuit.status` (substrate substitution for Kanazawa's Prefect metadata); L4 → outcome-quality (M2.5).
+`QCC-Observability.md` became the canonical observability source-of-truth in this session; transitional artifacts (`M2-metrics-design.md`, `M2b-otel-tracing-plan.md`) deleted. R2/R4/R5 in `01-requirements-re-evaluation.md` reworded to drop preordained OTel framing. Kanazawa-pyramid mapping: L0 → `qcc_qpu_*`; L1 → controller-runtime built-ins; L2 → `qcc_circuits_total`; L3 → `Circuit.status` (substrate substitution for Kanazawa's Prefect metadata); L4 → outcome-quality (M2.5). Kubernetes Events remain future work.
 
 Implementation followed in the 2026-05-17 entries below.
 
