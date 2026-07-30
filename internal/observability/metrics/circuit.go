@@ -242,10 +242,7 @@ func observeCircuits(
 			// store it directly on the CRD because the executor's
 			// TranspileMetadata doesn't break it out; derivation is
 			// honest enough for thesis-scope visualization).
-			singleQ := int64(tm.TotalGates) - int64(tm.TwoQubitGates)
-			if singleQ < 0 {
-				singleQ = 0
-			}
+			singleQ := max(int64(tm.TotalGates)-int64(tm.TwoQubitGates), 0)
 			obs.ObserveInt64(inst.transpileGates, singleQ,
 				metric.WithAttributes(withKind(base, "single_qubit")...))
 		}
