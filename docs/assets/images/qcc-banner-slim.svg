@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 160" role="img" aria-label="QCC">
+  <rect width="1280" height="160" fill="#0f62fe"></rect>
+  <g font-family="&#39;IBM Plex Sans&#39;, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="500" font-size="64" text-anchor="middle" fill="#ffffff">
+    <text x="544" y="102.4">Q</text>
+    <text x="640" y="102.4">C</text>
+    <text x="736" y="102.4">C</text>
+  </g>
+  <circle cx="592" cy="80" r="4.8" fill="#ffffff" fill-opacity=".85"></circle>
+  <circle cx="688" cy="80" r="4.8" fill="#ffffff" fill-opacity=".85"></circle>
+</svg>

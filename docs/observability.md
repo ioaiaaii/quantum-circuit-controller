@@ -1,288 +1,230 @@
 # Observability
 
-This document describes the telemetry and operational surfaces that exist in the current implementation.
+QCC's principal contribution is its observability surface: a metrics
+specification built entirely on cloud-native open standards, plus a query
+convention that lets ordinary PromQL answer cross-substrate questions
+without distributed tracing. This page is the reference; the dashboards in
+action, with screenshots, are in
+[demonstration.md](./demonstration.md#6-read-the-dashboards).
 
-## The Short Version
+## The four surfaces
 
-Today, QCC is observable primarily through:
+| Question | Surface |
+|---|---|
+| Which phase is my circuit in? Which backend? Why did it fail? | `Circuit.status` (phase, `selectedQPU`, conditions) |
+| What exactly was executed? | `status.convertedRef` artifact plus `status.transpile` |
+| What does this backend look like right now? | `QPU.status` (calibration, medians, availability) |
+| How do runs compare across backends or versions? | Grafana / PromQL over `qcc_*` metrics |
+| Which IBM job is this Circuit, and vice versa? | `status.providerJobId` and the `qcc.circuit.uid` job tag |
+| Why did an RPC or adapter call fail? | controller and executor logs |
 
-- `Circuit.status`
-- `QPU.status`
-- artifact `ConfigMap`s
-- controller-side `qcc_*` metrics
-- controller and executor logs
-- IBM job ID and tag linkage
+Per-resource truth lives on the resources; the metrics exist for the
+aggregate view, many Circuits and QPUs at once.
 
-It is not yet observable through end-to-end traces or executor-side telemetry.
+## Telemetry pipeline
 
-## Signal Map
-
-```mermaid
-flowchart TB
-    Controller["qcc-controller"] --> Status["Circuit.status / QPU.status"]
-    Controller --> Artifacts["Artifact ConfigMaps"]
-    Controller --> Metrics["qcc_* metrics"]
-    Metrics --> OTLP["OTLP Collector"]
-    OTLP --> Prom["Prometheus"]
-    Prom --> Graf["Grafana"]
-
-    Executor["qcc-executor"] --> ELogs["executor logs"]
-    Executor --> Provider["Aer / IBM"]
-    Provider --> Linkage["provider job id / IBM tags"]
-
-    User["qcc / kubectl"] --> Status
-    User --> Artifacts
-    User --> Graf
-    User --> ELogs
-    User --> Linkage
-```
-
-Read that diagram as four separate observability surfaces:
-
-- status for per-resource truth
-- artifacts for large outputs
-- metrics for fleet-level comparison and dashboards
-- logs for adapter and RPC detail
-
-## Use The Right Surface For The Question
-
-| Question | Best surface | Why |
-|---|---|---|
-| Which phase is my circuit in? | `Circuit.status.phase` | primary per-run lifecycle fact |
-| Which backend was chosen? | `Circuit.status.selectedQPU` | exact controller decision |
-| Why did it fail? | `Circuit.status.conditions` | reason and message are persisted |
-| What exactly was executed? | `status.convertedRef` plus `status.transpile` | captures normalized source and transpile shape |
-| What does this backend look like? | `QPU.status` | calibration, qubits, medians, conditions |
-| How long do phases take? | `qcc_circuit_phase_duration_seconds_observed` and `qcc_circuit_phase_duration_seconds` | one is per-Circuit, one is aggregate |
-| Which IBM job matches this Circuit? | `status.providerJobId` and IBM tags | forward and reverse lookup |
-| How do multiple runs compare? | Grafana over `qcc_*` metrics | best surface for cross-run and cross-QPU views |
-| Why did the executor RPC fail? | controller and executor logs | status often compresses the error |
-
-## What Exists Today
-
-| Surface | Status | Notes |
-|---|---|---|
-| `Circuit.status` | implemented | primary per-run lifecycle surface |
-| `QPU.status` | implemented | primary backend metadata surface |
-| artifact `ConfigMap`s | implemented | drawings, converted QASM, schedules |
-| `qcc_*` metrics via OTLP | implemented | controller-side instrumentation |
-| Grafana dashboards | implemented | source-controlled dashboards under `deploy/grafana/` |
-| cross-boundary IBM job tagging | implemented | Circuit UID stamped into IBM job tags |
-| executor-side OTel instrumentation | not implemented | no Python-side metrics or traces |
-| real distributed tracing | scaffolded only | tracer provider skeleton, no active exporter path |
-| Kubernetes `Event` emission | not implemented | docs and RBAC mention it, runtime does not emit them today |
-| direct scrape of controller-runtime built-ins | disabled by default | manifests exist but are not enabled in the default deploy |
-
-## Observability Model
-
-The current model is intentionally simple.
-
-### 1. Resource status
-
-`Circuit.status` and `QPU.status` are the primary operational truth.
-
-Use them for:
-
-- phase
-- selected backend
-- provider job ID
-- transpile depth and gate counts
-- backend error medians
-- backend calibration time
-
-### 2. Artifact `ConfigMap`s
-
-Generated large payloads live in owned `ConfigMap`s and are read by the CLI.
-
-- ASCII drawings
-- converted OpenQASM 3
-- schedule timelines
-
-### 3. Metrics
-
-The controller exports OTLP metrics to a collector, then to Prometheus and Grafana.
+Two data paths feed one Prometheus, so Grafana sees a single data source:
 
 ```mermaid
-flowchart TB
-    Controller["qcc-controller"] --> SDK["OpenTelemetry SDK"]
-    SDK --> Collector["OTLP/gRPC -> OpenTelemetry Collector"]
-    Collector --> Exporter["Prometheus exporter"]
-    Exporter --> Prom["Prometheus scrape"]
-    Prom --> Graf["Grafana dashboards"]
+flowchart LR
+    subgraph controller["qcc-controller"]
+        SDK["OTel SDK<br/>qcc_* metrics"]
+        BI["controller-runtime built-ins<br/>/metrics (not scraped by default)"]
+    end
+    SDK -->|OTLP/gRPC| Col["OTel Collector"]
+    Col -->|Prometheus exporter :8889| Prom["Prometheus"]
+    BI -.->|own ServiceMonitor, optional| Prom
+    Prom --> Graf["Grafana<br/>2 QCC dashboards"]
 ```
 
-### 4. Logs
+Emitting OTLP rather than a backend-specific format keeps the application
+independent of the metrics store: switching stores is Collector
+configuration, not a QCC change. The executor emits no telemetry of its
+own today; its work is visible through controller status, metrics, and
+logs.
 
-Logs are still the best place for:
+Two implementation patterns keep the reconcile hot path cheap and the
+series count bounded:
 
-- executor adapter exceptions
-- provider probe failures
-- RPC transport failures
-- Python-side stack traces
+- Resource-state metrics are observable gauges read from the
+  controller-runtime informer cache once per export cycle (the
+  kube-state-metrics idiom). The scrape path never touches the API
+  server; a gauge can lag a status change by up to one cycle (30 s).
+- Operational-event metrics (`qcc_circuits_total`, the phase-duration
+  histogram) are recorded synchronously at the moment of a lifecycle
+  transition (the controller-runtime idiom).
 
-## Operational Lookup Order
+## Metric specification
 
-When debugging one Circuit, this is the most useful sequence.
+Fourteen domain metrics. Six describe the substrate (how good each
+backend currently is), eight describe the work (what happened to each
+circuit).
 
-```mermaid
-flowchart TD
-    Start["Circuit is failing or unclear"] --> Scope{"Single run or fleet trend?"}
-    Scope -->|single run| Status["Check Circuit.status and artifact refs"]
-    Scope -->|fleet trend| Dash["Check Grafana / Prometheus"]
-    Status --> Enough{"Reason is clear?"}
-    Dash --> Enough
-    Enough -->|no| Logs["Check controller and executor logs"]
-    Enough -->|yes| End["Stop"]
-    Logs --> IBM{"IBM hardware run?"}
-    IBM -->|yes| Link["Use providerJobId and IBM tags for cross-lookup"]
-    IBM -->|no| End
-    Link --> End
+### QPU metrics
+
+All six are observable gauges populated from `QPU.status`. Every series
+carries the `qpu` identity label; `QPU` is cluster-scoped, so there is no
+`namespace` label.
+
+| Metric | Additional dimensions |
+|---|---|
+| `qcc_qpu_info` | `uid, provider, kind, processor_family, processor_revision` |
+| `qcc_qpu_operation_error_median` | `operation` in `{gate_1q, gate_2q, readout}` |
+| `qcc_qpu_operation_duration_median_seconds` | `operation` in `{gate_1q, gate_2q}` |
+| `qcc_qpu_coherence_seconds` | `type` in `{t1, t2}` |
+| `qcc_qpu_last_calibration_timestamp_seconds` | none |
+| `qcc_qpu_condition` | `condition`, `status` in `{true, false, unknown}` |
+
+Dimension semantics, the physical quantities a quantum engineer reasons
+about, each a median across the device's qubits or pairs:
+
+- `gate_1q`: single-qubit gates. On IBM hardware the native `sx` and `x`;
+  `rz` is virtual and error-free, so the figure reflects physical gate
+  quality.
+- `gate_2q`: the entangling gate (`cz` on Heron, `ecr` on Eagle), the
+  operation that dominates a deep circuit's error budget.
+- `readout`: measurement assignment error. Error metric only: the IBM
+  `Target` reports no measurement duration, so `readout` is absent from
+  the duration metric rather than zero.
+- `t1` and `t2`: energy relaxation and dephasing. The CRD stores
+  microseconds (IBM's published unit); the metric converts to seconds to
+  honor its `_seconds` suffix.
+
+`qcc_qpu_info` is the info-metric anchor (value always 1, identity in
+labels); other QPU metrics join to it with `group_left`.
+`qcc_qpu_condition` follows the kube-state-metrics Conditions idiom: one
+row per `(qpu, condition, status)`, exactly one of which is 1.
+
+### Circuit metrics
+
+All series carry `circuit`, `namespace`, and `uid` as identity labels.
+
+| Metric | Type | Additional dimensions |
+|---|---|---|
+| `qcc_circuit_info` | gauge | `mode, source_format, shots, qpu, provider_job_id, algorithm, algorithm_version, experiment, run_index, source_sha256` |
+| `qcc_circuits_total` | counter | `mode, qpu, phase, reason, provider_job_id` |
+| `qcc_circuit_phase_duration_seconds` | histogram | `qpu, phase, provider_job_id` |
+| `qcc_circuit_phase_duration_seconds_observed` | gauge | `qpu, phase, provider_job_id` |
+| `qcc_circuit_usage_seconds` | gauge | `qpu, provider_job_id` |
+| `qcc_circuit_transpile_depth` | gauge | `qpu` |
+| `qcc_circuit_transpile_gates` | gauge | `qpu, kind` in `{single_qubit, two_qubit, total}` |
+| `qcc_circuit_result_count` | gauge | `qpu, bitstring` |
+
+Dimension semantics:
+
+- `kind`: post-transpile gate counts in the backend's native set.
+  `two_qubit` is the count that drives fidelity; `single_qubit` is
+  derived as total minus two_qubit.
+- `phase`: one of `Pending`, `Selecting`, `Submitting`, `Running`, from
+  the `status.conditions` timestamps. `Submitting` spans transpilation
+  and submission together, which the conditions vocabulary does not
+  separate.
+- `bitstring`: a measured outcome (`0000`), valued by shot count. The raw
+  measurement histogram and the input to any fidelity analysis; it adds
+  2^q series for a q-qubit readout, fine at small-circuit scale and
+  budgeted, revisit beyond.
+
+Three deliberate design points:
+
+- The phase-duration pair. The histogram gives fleet-wide percentiles via
+  `histogram_quantile`; the `_observed` gauge is recomputed from
+  condition timestamps every cycle, so per-Circuit panels survive
+  controller restarts and Prometheus's staleness window. Same numbers,
+  two lifetimes.
+- `qcc_circuit_usage_seconds` is the substrate's own billable on-QPU time
+  (Qiskit Runtime `Job.usage()`), emitted only when the substrate reports
+  it, so any value in Prometheus marks a real-hardware run. Dividing it
+  by the `Running` duration gives the orchestration overhead.
+- The cross-boundary handle. The provider job ID is promoted onto
+  `qcc_circuit_info` as `provider_job_id`. Given a job ID from a vendor
+  console or billing export, one PromQL lookup returns the Circuit's full
+  identity; given a Circuit, the ID sits on its status. The link reads
+  from either side with no trace-context channel.
+
+## Algorithm-aware queries
+
+"How does Shor v2 compare to v1?" is an algorithm-level question, and
+Prometheus has no algorithm catalogue. QCC closes the gap by promoting the
+reserved `qcc.io/*` labels from the resource into metric label-space, onto
+`qcc_circuit_info` only, so operational series stay low-cardinality and
+join back on `uid`:
+
+```promql
+# transpiled depth of every "shor" run, labelled by version
+qcc_circuit_transpile_depth
+  * on(uid) group_left(algorithm, algorithm_version)
+    qcc_circuit_info{algorithm="shor"}
 ```
 
-## Circuit Metrics
+The promotion is an explicit allowlist (algorithm, algorithm-version,
+experiment, run-index, source-sha256). Arbitrary user labels are never
+forwarded, because that would hand cardinality control to whoever creates
+Circuits.
 
-### Observable gauges
+## Worked queries
 
-- `qcc_circuit_info`
-- `qcc_circuit_transpile_depth`
-- `qcc_circuit_transpile_gates`
-- `qcc_circuit_result_count`
-- `qcc_circuit_phase_duration_seconds_observed`
-- `qcc_circuit_usage_seconds`
+```promql
+# 1. Orchestration overhead: on-QPU seconds versus wall-clock Running time.
+#    Only real-hardware runs have usage_seconds, so the ratio self-selects.
+qcc_circuit_usage_seconds
+  / on(uid) qcc_circuit_phase_duration_seconds_observed{phase="Running"}
 
-### Event-driven instruments
+# 2. Fleet p95 of Running duration per backend, from the histogram.
+histogram_quantile(0.95,
+  sum by (le, qpu) (rate(qcc_circuit_phase_duration_seconds_bucket{phase="Running"}[1h])))
 
-- `qcc_circuits_total`
-- `qcc_circuit_phase_duration_seconds`
+# 3. Correct-period mass for every "shor" run (the demonstration's metric):
+#    period-bitstring counts over total counts, labelled by version and QPU.
+  sum by (uid) (qcc_circuit_result_count{bitstring=~"0000|1000"})
+/ sum by (uid) (qcc_circuit_result_count)
+* on(uid) group_left(algorithm_version, qpu) qcc_circuit_info{algorithm="shor"}
 
-### Circuit metric inventory
+# 4. Failure reasons over the last day.
+sum by (reason) (increase(qcc_circuits_total{phase="Failed"}[24h]))
+```
 
-| Metric | Type | Purpose |
-|---|---|---|
-| `qcc_circuit_info` | observable gauge | identity row for joins |
-| `qcc_circuit_transpile_depth` | observable gauge | post-transpile depth |
-| `qcc_circuit_transpile_gates` | observable gauge | gate counts by kind |
-| `qcc_circuit_result_count` | observable gauge | per-bitstring outcome counts |
-| `qcc_circuit_phase_duration_seconds_observed` | observable gauge | per-Circuit phase durations from status timestamps |
-| `qcc_circuit_usage_seconds` | observable gauge | hardware-reported compute time |
-| `qcc_circuits_total` | counter | phase-transition count |
-| `qcc_circuit_phase_duration_seconds` | histogram | fleet-level phase-duration distribution |
+## Dashboards
 
-## QPU Metrics
+Two source-controlled dashboards ship as ConfigMaps under
+[`../deploy/grafana/`](../deploy/grafana/) (label `grafana_dashboard: "1"`,
+picked up by the kube-prometheus-stack sidecar; install with
+`kubectl apply -f deploy/grafana/`):
 
-- `qcc_qpu_info`
-- `qcc_qpu_operation_error_median`
-- `qcc_qpu_operation_duration_median_seconds`
-- `qcc_qpu_coherence_seconds`
-- `qcc_qpu_last_calibration_timestamp_seconds`
-- `qcc_qpu_condition`
+- QCC · QPU substrate health (USE-Q): fleet view of availability,
+  ready-over-registered, calibration freshness, error medians, coherence,
+  family comparison.
+- QCC · Circuit detail: one run's identity, transpile shape, phase
+  timing, outcome histogram, `$experiment`/`$algorithm` pivots, and the
+  "Open on IBM Quantum" data link on `provider_job_id`.
 
-### QPU metric inventory
-
-| Metric | Type | Purpose |
-|---|---|---|
-| `qcc_qpu_info` | observable gauge | identity row for joins |
-| `qcc_qpu_operation_error_median` | observable gauge | 1Q/2Q/readout medians |
-| `qcc_qpu_operation_duration_median_seconds` | observable gauge | 1Q/2Q median durations |
-| `qcc_qpu_coherence_seconds` | observable gauge | T1/T2 medians |
-| `qcc_qpu_last_calibration_timestamp_seconds` | observable gauge | calibration freshness |
-| `qcc_qpu_condition` | observable gauge | KSM-style condition matrix |
-
-## Dashboard And Evidence Pointers
-
-The dashboard manifests live here:
-
-- [`../deploy/grafana/qcc-circuit-dashboard.yaml`](../deploy/grafana/qcc-circuit-dashboard.yaml)
-- [`../deploy/grafana/qcc-qpu-dashboard.yaml`](../deploy/grafana/qcc-qpu-dashboard.yaml)
-
-If you want concrete examples of what those dashboards look like, use the captured screenshots in `../docs/`:
-
-- [`../docs/grafana_qpu_availability.png`](../docs/grafana_qpu_availability.png): fleet-level QPU readiness and availability
-- [`../docs/grafana_qpu_coherence.png`](../docs/grafana_qpu_coherence.png): coherence and family comparison view
-- [`../docs/grafana_qcc_qpu_metrics.png`](../docs/grafana_qcc_qpu_metrics.png): QPU metric inventory in Grafana Explore
-- [`../docs/grafana_qcc_circuit_metrics.png`](../docs/grafana_qcc_circuit_metrics.png): Circuit metric inventory in Grafana Explore
-- [`../docs/grafana_circuit_provider_job_link.png`](../docs/grafana_circuit_provider_job_link.png): reverse linkage from dashboard to provider job ID
-- [`../docs/grafana_circuit_get_shor_tuned_v2.png`](../docs/grafana_circuit_get_shor_tuned_v2.png): one real Circuit detail view
-
-For the full evidence narrative behind those screenshots, read [`../docs/README.md`](../docs/README.md) and [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md).
+USE-Q is the USE method (Utilisation, Saturation, Errors) adapted to a
+quantum substrate, a deliberate prototype mapping rather than settled
+methodology. Saturation becomes "can this backend accept work"
+(availability, ready-over-registered). Utilisation becomes "is it fresh
+enough to be useful" (calibration age, since quality drifts between
+calibrations). Errors becomes the noise profile (gate and readout
+medians, T1 and T2, family comparison). The Circuit dashboard plays the
+RED role for the workload side: rate and errors from
+`qcc_circuits_total`, duration from the phase metrics, outcome from the
+result histogram.
 
 ## Logs
 
-There are two important log streams:
-
-- controller logs
-- executor logs
-
-Typical commands:
+Controller (slog JSON) and executor (Python logging) both write to
+stdout:
 
 ```bash
-kubectl logs -n quantum-circuit-controller-system deployment/quantum-circuit-controller-controller-manager -c manager
-kubectl logs -n quantum-circuit-controller-system deployment/quantum-circuit-controller-executor
+kubectl logs -n quantum-circuit-controller-system deploy/quantum-circuit-controller-controller-manager
+kubectl logs -n quantum-circuit-controller-system deploy/quantum-circuit-controller-executor
 ```
 
-Use logs when:
+Logs are the right surface for adapter exceptions, probe failures, and
+RPC transport errors. Status compresses those into a condition reason;
+the logs keep the stack trace.
 
-- the executor RPC failed transiently
-- backend probing failed
-- a provider-specific adapter raised an exception
-- you need detail not stored in CR status
+## What is not here yet
 
-## Cross-Boundary Identity
-
-QCC solves the "which Kubernetes run produced which provider job?" question in both directions.
-
-### Forward linkage
-
-For IBM jobs, the executor stamps the Circuit UID into the provider job tags.
-
-### Reverse linkage
-
-The controller stores the provider job ID in:
-
-- `Circuit.status.providerJobId`
-- `qcc_circuit_info{provider_job_id="..."}`
-- `qcc_circuits_total{provider_job_id="..."}`
-
-This makes both Kubernetes-side and provider-side lookup practical.
-
-## Missing Observability Surfaces
-
-The shipped/partial/absent matrix lives in the implementation status section in [`README.md`](./README.md#implementation-status). Observability-specific gaps are:
-
-| Surface | Current state |
-|---|---|
-| end-to-end traces | scaffolding exists, useful trace export is not active |
-| executor-side telemetry | Python executor does not emit OTel metrics or traces |
-| Kubernetes Events | controller does not currently record Events |
-| controller-runtime built-ins | endpoint exists, default scrape path is not wired |
-
-## Debugging Playbook
-
-### A Circuit never leaves `Pending`
-
-Check:
-
-- is the controller running?
-- did you apply any QPUs?
-- does the namespace contain the `Circuit` you think it does?
-
-### A Circuit fails with `NoEligibleBackend`
-
-Check:
-
-- `kubectl get qpus`
-- `status.availability`
-- selector mismatch on provider/backend/kind/minQubits
-- whether you assumed `allowedQPURefs` or `region` are enforced
-
-### A Circuit fails at submission on IBM
-
-Check:
-
-- executor deployment env vars or secret
-- executor logs
-- whether the IBM QPU was marked available optimistically even though probing failed
-
-### A queued hardware run disappears after executor restart
-
-This is a known limitation of the current implementation. The async task registry is in-memory only.
+Distributed tracing (provider wired, no spans exported), executor-side
+telemetry, and Kubernetes Events are absent by design in this release.
+See the [implementation status matrix](./README.md#implementation-status)
+for the full inventory.

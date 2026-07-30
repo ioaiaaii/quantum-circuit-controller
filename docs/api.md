@@ -1,108 +1,83 @@
 # API
 
-This document summarizes the current QCC API from the implementation point of view.
+QCC's API surface is two custom resources at `qcc.io/v1alpha1`: `Circuit`
+(namespaced; one execution, draw, schedule, or selection request) and
+`QPU` (cluster-scoped; one registered backend). The schema captures only
+what the controller and executor act on. Algorithm semantics stay in user
+code, and vendor-specific construction stays behind the executor's
+adapters.
 
-## The API In One View
+Where a field exists on the schema but is not enforced by the runtime, the
+tables below say so. Treat those rows as reserved contract surface.
 
-QCC intentionally exposes only two first-class resources:
-
-- `Circuit`: one execution, draw, schedule, or selection request
-- `QPU`: one backend profile plus observed backend metadata
-
-Everything else is derived from those two.
-
-```mermaid
-flowchart TB
-    CLI["qcc / kubectl"] --> Specs["desired state<br/>Circuit.spec + QPU.spec"]
-    Specs --> Runtime["controller + executor"]
-    QPUStatus["QPU.status<br/>backend facts"] --> Runtime
-    Runtime --> CircuitStatus["Circuit.status<br/>phase / selectedQPU / results"]
-    Runtime --> Artifacts["ConfigMap artifacts<br/>drawing / qasm / schedule"]
-    CircuitStatus --> CLI
-    Artifacts --> CLI
-```
-
-The important split is:
-
-- `spec` expresses desired state or declared backend identity
-- `status` expresses observed state and outcomes
-- artifacts hold bulky generated payloads
-
-## Resource Summary
-
-### `Circuit`
-
-- group/version: `qcc.io/v1alpha1`
-- scope: namespaced
-- purpose: one circuit request and its lifecycle
-
-### `QPU`
-
-- group/version: `qcc.io/v1alpha1`
-- scope: cluster-scoped
-- purpose: one registered backend profile and its observed metadata
-
-## Who Writes What
-
-| Surface | Main writer | What it means |
+| Surface | Writer | Meaning |
 |---|---|---|
-| `Circuit.spec` | user or `qcc` CLI | desired circuit operation |
-| `Circuit.metadata.labels` | user, CLI, and controller | grouping and provenance |
-| `Circuit.status` | controller | what happened to the request |
-| artifact `ConfigMap`s | controller | large generated outputs referenced from status |
-| `QPU.spec` | user or sample manifest | declared backend identity |
+| `Circuit.spec` | user / CLI | desired circuit operation |
+| `Circuit.status` + artifact `ConfigMap`s | controller | what happened |
+| `QPU.spec` | user / manifest | declared backend identity |
 | `QPU.status` | controller | probed backend facts and availability |
 
-The executor influences status, but it does not write Kubernetes objects directly.
+The executor influences status through the controller; it never writes
+Kubernetes objects itself.
 
-## `Circuit`
+## The two-tier schema
 
-### Main Spec Fields
+Vendor SDKs change faster than a CRD schema can. Modeling every Qiskit
+parameter would force a schema version per new transpiler flag; modeling
+too few would wall off the SDK's surface. QCC resolves this with two
+tiers:
 
-| Field | Meaning | Current status |
+- Tier 1: typed camelCase fields QCC owns and validates. On `Circuit`:
+  `mode`, `source`, `shots`, `optimizationLevel`, `backendSelector`,
+  `timeoutSeconds`. On `QPU`: `provider`, `backendName`, `kind`,
+  `qubits`, `access`, `capabilities`, `region`. Under a dozen per
+  resource, slow-moving, exposed as CLI flags.
+- Tier 2: two open passthrough blocks on `Circuit`. The keys of
+  `spec.transpile` become kwargs to Qiskit's `transpile()`; the keys of
+  `spec.execute` become kwargs to the backend's run call
+  (`AerSimulator.run()` or `SamplerV2.run()`). Keys are snake_case,
+  forwarded verbatim, uninterpreted. `shots` is Tier-1 and is stripped
+  from `execute` so it cannot be set in two places.
+
+When a vendor SDK gains a parameter, users can set it as soon as the new
+SDK ships in the executor image. No CRD bump, no controller rebuild. The
+cost: no API-server validation of Tier-2 keys; a bad key surfaces as a
+terminal failure carrying Qiskit's own error message.
+
+## Circuit
+
+### Spec
+
+| Field | Meaning | Status |
 |---|---|---|
-| `spec.source.format` | `openqasm3` or `qiskit` | implemented |
-| `spec.source.body` | inline source text | implemented |
-| `spec.mode` | `run`, `select`, `draw`, `schedule` | implemented |
-| `spec.shots` | execution repetitions for `run` | implemented |
-| `spec.backendSelector.provider` | provider filter | implemented |
-| `spec.backendSelector.backendName` | exact backend target | implemented |
-| `spec.backendSelector.kind` | `hardware` or `simulator` | implemented |
-| `spec.backendSelector.minQubits` | minimum qubit requirement | implemented |
-| `spec.backendSelector.allowedQPURefs` | QPU allow-list | schema exists, not enforced yet |
-| `spec.backendSelector.region` | region/locality hint | schema exists, not enforced yet |
-| `spec.optimizationLevel` | transpilation effort knob | implemented |
-| `spec.timeoutSeconds` | execution timeout hint | present in wire model; not a full controller timeout policy |
-| `spec.transpile` | opaque Qiskit transpile kwargs | implemented |
-| `spec.execute` | opaque adapter execution kwargs | implemented |
+| `spec.mode` | `run`, `select`, `draw`, `schedule` | enforced |
+| `spec.source.format` | `openqasm3` or `qiskit` | enforced |
+| `spec.source.body` | inline source text | enforced |
+| `spec.shots` | executions, required for `run` | enforced |
+| `spec.optimizationLevel` | Qiskit preset 0-3 | enforced |
+| `spec.backendSelector.provider` | provider filter | enforced |
+| `spec.backendSelector.backendName` | exact backend (K8s name or provider-native) | enforced |
+| `spec.backendSelector.kind` | `hardware` or `simulator` | enforced |
+| `spec.backendSelector.minQubits` | minimum qubit count | enforced |
+| `spec.backendSelector.allowedQPURefs` | QPU allow-list | schema only |
+| `spec.backendSelector.region` | locality hint | schema only |
+| `spec.timeoutSeconds` | execution bound | wire model only, no controller timeout policy |
+| `spec.transpile` | Tier-2 passthrough to `transpile()` kwargs | enforced |
+| `spec.execute` | Tier-2 passthrough to the run-call kwargs | enforced |
 
-### Circuit Mode Map
-
-```mermaid
-flowchart TD
-    Mode{"Circuit.spec.mode"} --> Run["run"]
-    Mode --> Select["select"]
-    Mode --> Draw["draw"]
-    Mode --> Schedule["schedule"]
-
-    Run --> RunOut["results inline in status<br/>optional convertedRef"]
-    Select --> SelectOut["selectedQPU and selectionSummary"]
-    Draw --> DrawOut["drawingRef"]
-    Schedule --> SchedOut["scheduleRef"]
-```
-
-### Example: `run`
+A minimal `run`:
 
 ```yaml
 apiVersion: qcc.io/v1alpha1
 kind: Circuit
 metadata:
-  name: bell-run
+  name: bell-state
+  labels:
+    qcc.io/algorithm: bell-state
+    qcc.io/algorithm-version: v1
 spec:
   mode: run
   shots: 1024
-  backendSelector:
-    backendName: aer-statevector
   source:
     format: openqasm3
     body: |
@@ -114,272 +89,233 @@ spec:
       cx q[0], q[1];
       c[0] = measure q[0];
       c[1] = measure q[1];
+  backendSelector:
+    kind: simulator
 ```
 
-### Example: `draw`
+A Tier-2 example, Qiskit's ALAP scheduling pass reaching `transpile()`
+untyped (from the Shor evaluation,
+`examples/thesis/circuits/shor-v3.yaml`):
 
 ```yaml
-apiVersion: qcc.io/v1alpha1
-kind: Circuit
-metadata:
-  name: bell-draw
 spec:
-  mode: draw
-  source:
-    format: qiskit
-    body: |
-      from qiskit import QuantumCircuit
-      circuit = QuantumCircuit(2, 2)
-      circuit.h(0)
-      circuit.cx(0, 1)
-      circuit.measure([0, 1], [0, 1])
+  mode: run
+  shots: 4096
+  optimizationLevel: 3
+  transpile:
+    scheduling_method: alap
 ```
 
-### Modes
+### Modes and their outputs
 
-| Mode | Behavior | Main outputs |
+| Mode | Behavior | Outputs |
 |---|---|---|
-| `run` | select backend and execute | `status.results`, `status.providerJobId`, `status.transpile`, optional `status.convertedRef` |
-| `select` | select a backend only | `status.selectedQPU`, `status.selectionSummary` |
-| `draw` | render ASCII drawing | `status.drawingRef` |
-| `schedule` | render backend-specific timeline | `status.scheduleRef` |
+| `run` | select backend and execute | `status.results`, `providerJobId`, `transpile`, optional `convertedRef` |
+| `select` | selection only, no QPU time | `selectedQPU`, `selectionSummary` |
+| `draw` | ASCII rendering | `drawingRef` |
+| `schedule` | per-instruction timeline (dt cycles) | `scheduleRef` |
 
-### Backend Selector Semantics Today
-
-| Selector field | Behavior today |
-|---|---|
-| `provider` | enforced |
-| `backendName` | enforced |
-| `kind` | enforced |
-| `minQubits` | enforced |
-| `allowedQPURefs` | declared, not enforced |
-| `region` | declared, not enforced |
-
-### Status Layout
-
-QCC keeps small, structured facts on the CR and puts larger payloads into sibling artifacts.
-
-```mermaid
-flowchart TB
-    Output["Circuit outputs"] --> Status["Circuit.status<br/>phase / selectedQPU / providerJobId / results / refs"]
-    Output --> Artifact["Artifact ConfigMaps<br/>drawing / qasm / schedule"]
-```
-
-### Status Fields
+### Status
 
 | Field | Meaning |
 |---|---|
-| `status.phase` | current user-facing phase |
+| `status.phase` | `Pending`, `Selecting`, `Transpiling`, `Submitting`, `Running`, `Rendering`, `Scheduling`, `Succeeded`, `Failed` |
+| `status.conditions` | eight types: `Accepted`, `Validated`, `Selected`, `Rendered`, `Scheduled`, `Submitted`, `Completed`, `Failed`; each with reason, message, timestamp |
 | `status.selectedQPU` | chosen `QPU` name |
-| `status.providerJobId` | executor/provider job identifier |
-| `status.observedGeneration` | reconciliation generation marker |
-| `status.conditions` | phase and outcome conditions |
-| `status.selectionSummary` | human-readable selection summary |
-| `status.results` | measurement counts |
-| `status.usageSeconds` | substrate-reported billable compute time |
-| `status.transpile` | depth / two-qubit / total gate counts |
-| `status.drawingRef` | ASCII drawing artifact |
-| `status.scheduleRef` | schedule artifact |
-| `status.convertedRef` | converted QASM artifact |
-| `status.traceId` | reserved field, not populated today |
+| `status.providerJobId` | the cross-boundary identifier (`aer-<uuid>` or the vendor's job ID) |
+| `status.results` | measurement counts, inline (`"0000": 517`) |
+| `status.usageSeconds` | substrate-reported billable on-QPU seconds (hardware only) |
+| `status.transpile` | `{depth, twoQubitGates, totalGates}` post-transpile shape |
+| `status.drawingRef` / `scheduleRef` / `convertedRef` | artifact ConfigMap pointers |
+| `status.traceId` | reserved, unpopulated |
 
-### Result Shape
-
-Execution results are currently stored inline as:
-
-```yaml
-status:
-  results:
-    "00": 512
-    "11": 512
-```
-
-This matches the current thesis-scale workloads and CLI UX. QCC does not currently externalize result histograms to a separate result object.
-
-### Phases
-
-- `Pending`
-- `Selecting`
-- `Transpiling`
-- `Submitting`
-- `Running`
-- `Rendering`
-- `Scheduling`
-- `Succeeded`
-- `Failed`
-
-### Conditions Used Today
-
-- `Accepted`
-- `Validated`
-- `Selected`
-- `Submitted`
-- `Rendered`
-- `Scheduled`
-- `Completed`
-- `Failed`
-
-### Common Failure Reasons
-
-- `InvalidCircuit`
-- `NoEligibleBackend`
-- `TranspilationFailed`
-- `ProviderSubmissionFailed`
-- `ProviderJobTimedOut`
-- `SourceConversionFailed`
-- `RenderingFailed`
-- `SchedulingFailed`
-- `SchedulingUnsupported`
+Failure reasons on the `Failed` condition: `InvalidCircuit`,
+`NoEligibleBackend`, `TranspilationFailed`, `ProviderSubmissionFailed`,
+`ProviderJobTimedOut`, `SourceConversionFailed`, `RenderingFailed`,
+`SchedulingFailed`, `SchedulingUnsupported`.
 
 ### Artifacts
 
-QCC stores generated payloads in sibling `ConfigMap`s instead of CR status.
+Bulky generated payloads live in ConfigMaps the `Circuit` owns (same
+namespace, garbage-collected with it), named `<circuit-name>-<suffix>`:
 
-| Ref field | ConfigMap payload |
-|---|---|
-| `drawingRef` | `data["drawing"]` |
-| `convertedRef` | `data["qasm"]` |
-| `scheduleRef` | `data["schedule.json"]` |
-
-The CLI reads these artifacts directly for `qcc get --draw`, `qcc get --qasm`, and `qcc get --schedule`.
-
-### Labels Used By The CLI And Controller
-
-The CLI and controller support a small grouping/provenance label convention:
-
-| Label | Writer | Meaning |
+| Ref | ConfigMap key | Read by |
 |---|---|---|
-| `qcc.io/algorithm` | CLI or user | algorithm family |
-| `qcc.io/algorithm-version` | CLI or user | algorithm version |
-| `qcc.io/experiment` | CLI or user | experiment/campaign |
-| `qcc.io/run-index` | controller | ordinal within an algorithm cohort |
-| `qcc.io/source-sha256` | controller | short SHA-256 prefix of the source body |
+| `drawingRef` | `data["drawing"]` | `qcc get circuit <name> --draw` |
+| `convertedRef` | `data["qasm"]` | `qcc get circuit <name> --qasm` |
+| `scheduleRef` | `data["schedule.json"]` | `qcc get circuit <name> --schedule` |
 
-These labels are used by:
+### Reserved labels
 
-- `qcc get` filtering
-- `qcc run --performance-test`
-- Grafana grouping
-- provenance/debugging
+Five labels carry algorithm-grouping metadata that the controller
+promotes into metric label-space
+([observability.md](./observability.md#algorithm-aware-queries)):
 
-## `QPU`
+| Label | Owner | Stamped at | Notes |
+|---|---|---|---|
+| `qcc.io/algorithm` | user | submission | algorithm family (`shor`); without it a Circuit is a one-off |
+| `qcc.io/algorithm-version` | user | submission | iteration (`v2`); requires `algorithm` |
+| `qcc.io/experiment` | user | submission | campaign grouping across algorithms |
+| `qcc.io/run-index` | controller | first reconcile | ordinal within the algorithm cohort, max(existing)+1 |
+| `qcc.io/source-sha256` | controller | first reconcile | first 16 hex chars of the SHA-256 of `source.body`; always stamped |
 
-### Main Spec Fields
+`source-sha256` answers whether the source actually changed between
+versions: a label-only edit produces the same hash.
 
-| Field | Meaning | Current status |
+## QPU
+
+The schema separates what the operator declares (which backend, how to
+reach it) from what the controller discovers by probing it through the
+executor.
+
+### Spec
+
+| Field | Meaning | Status |
 |---|---|---|
-| `spec.provider` | adapter discriminator such as `local` or `ibm` | implemented |
-| `spec.backendName` | provider-native backend name | implemented |
-| `spec.kind` | `simulator` or `hardware` | implemented |
-| `spec.qubits` | user hint for qubit count | implemented as fallback |
-| `spec.capabilities.maxShots` | backend shot ceiling | implemented |
-| `spec.region` | provider locality hint | stored, shown in CLI, not used by selection |
-| `spec.access.credentialSecretRef` | per-QPU credential reference | schema exists, not consumed by runtime yet |
+| `spec.provider` | adapter selector: `local` (Aer + `fake_*`) or `ibm` | enforced |
+| `spec.backendName` | provider-native name (`fake_brisbane`); derived from `metadata.name` (dashes become underscores) when omitted | enforced |
+| `spec.kind` | `simulator` or `hardware`; selects the sync or async execution path | enforced |
+| `spec.qubits` | user hint; the probe overwrites it | fallback only |
+| `spec.capabilities.maxShots` | shot ceiling, enforced at selection | enforced |
+| `spec.access.credentialSecretRef` | per-QPU credential reference | schema only; runtime uses executor env vars |
+| `spec.region` | locality hint | schema only |
 
-### Example: fake backend
+A simulator entry and a hardware entry, side by side:
 
 ```yaml
+# Simulator: provider and kind; the probe fills in the rest.
 apiVersion: qcc.io/v1alpha1
 kind: QPU
 metadata:
   name: fake-brisbane
+  labels:
+    qcc.io/provider: local
+    qcc.io/family: eagle-r3
 spec:
   provider: local
-  backendName: fake_brisbane
   kind: simulator
-```
-
-### Example: IBM backend
-
-```yaml
+---
+# Hardware: adds the provider-native name and declared caps.
 apiVersion: qcc.io/v1alpha1
 kind: QPU
 metadata:
   name: ibm-kingston
+  labels:
+    qcc.io/provider: ibm
+    qcc.io/family: heron-r2
 spec:
   provider: ibm
   backendName: ibm_kingston
   kind: hardware
+  capabilities:
+    maxShots: 100000
 ```
 
-### Main Status Fields
+### Status
 
-| Field | Meaning |
-|---|---|
-| `status.availability` | `Available`, `Unavailable`, or `Unknown` |
-| `status.qubits` | probed authoritative qubit count |
-| `status.basisGates` | backend basis-gate set |
-| `status.couplingEdges` | coupling-map edge count |
-| `status.lastCalibrationTime` | backend calibration timestamp |
-| `status.errorMedians` | single-qubit, two-qubit, and readout medians |
-| `status.coherenceMedians` | T1 and T2 medians |
-| `status.dtSeconds` | backend `dt` period |
-| `status.instructionDurationMedians` | median gate durations |
-| `status.processor` | processor family metadata |
-| `status.queueDepth` | declared in schema, not actively maintained today |
-| `status.conditions` | readiness/freshness matrix |
-| `status.lastError` | declared in schema, not actively populated today |
+The operator writes none of it. After the probe, the short spec expands
+into a full backend description. Real output for `ibm-kingston`:
 
-### Availability Model
+```yaml
+status:
+  availability: Available
+  qubits: 156
+  processor: {family: Heron, revision: "2"}
+  couplingEdges: 352
+  basisGates: [cz, delay, id, if_else, measure, measure_2, reset, rz, sx, x]
+  lastCalibrationTime: "2026-05-16T10:35:26Z"
+  coherenceMedians: {t1Micros: 174.6, t2Micros: 117.0}
+  errorMedians: {singleQubit: 0.000274, twoQubit: 0.00203, readout: 0.0165}
+  instructionDurationMedians: {singleQubitSeconds: 3.2e-08, twoQubitSeconds: 6.8e-08}
+  dtSeconds: 4e-09
+  conditions:
+  - type: Ready
+    status: "True"
+    reason: ProviderProbeOK
+```
 
-Current provider policies:
+Three groups. Capability metadata (`qubits`, `basisGates`,
+`couplingEdges`, `processor`) describes what the backend is. Calibration
+metadata (`lastCalibrationTime`, `errorMedians`, `coherenceMedians`,
+`dtSeconds`, `instructionDurationMedians`) describes its current
+characteristics, in the units the schema publishes: microseconds for
+coherence, seconds for durations. Operational signals (`availability`,
+plus schema-only `queueDepth` and `lastError`) describe live state;
+`availability` (`Available`, `Unavailable`, `Unknown`) is what selection
+reads.
 
-- `local` -> `Available`
-- `ibm` -> treated as `Available` optimistically
-- unknown providers -> `Unknown`
+Conditions: `Ready` (reason `ProviderProbeOK`) is always present.
+`MetadataFresh` appears only where freshness is meaningful. Local
+providers carry it permanently `True`, since a frozen snapshot cannot go
+stale; IBM hardware does not carry it, since calibration drifts over
+hours and freshness reads from `lastCalibrationTime` instead.
 
-This means `ibm` availability is not a strict health guarantee yet.
+Availability today: `local` becomes `Available`; `ibm` becomes
+`Available` optimistically (a failed probe does not remove it); unknown
+providers stay `Unknown`, which selection rejects.
 
-## API Behavior Notes
+## The executor gRPC contract
 
-### Qiskit-Python input
+The controller-executor seam is `qcc.executor.v1`
+([`proto/qcc/executor/v1/executor.proto`](../proto/qcc/executor/v1/executor.proto),
+the single source of truth; the tables here summarize it). Eight RPCs in
+three families:
 
-When `Circuit.spec.source.format=qiskit`, the executor executes the Python source in an isolated module namespace, finds a `QuantumCircuit`, and converts it to OpenQASM 3 before normal execution.
+| RPC | Family | Request (essentials) | Response (essentials) |
+|---|---|---|---|
+| `RunCircuit` | sync | `TaskSpec` | terminal `status`, `task_id`, `counts`, `transpile{depth,2q,total}`, `backend_used`, `usage_seconds` |
+| `SubmitTask` | async | `TaskSpec` | `task_id` (provider job ID), `transpile`, `backend_used`; returns immediately |
+| `WatchTask` | async | `task_id` | stream of `{status, message}` until terminal or the stream ceiling |
+| `FetchTaskResult` | async | `task_id` | `counts`, `usage_seconds`; the executor drops the task after delivery |
+| `ConvertSource` | utility | `{format, body}` | OpenQASM 3 text |
+| `DrawCircuit` | utility | `{format, body}` | ASCII drawing |
+| `ScheduleCircuit` | utility | source, target, optional level | `ops[{name,qubits,start_dt,duration_dt}]`, `total_duration_dt`, `dt_seconds` |
+| `ProbeBackend` | utility | `provider`, `backend_name` | qubits, basis gates, coupling edges, calibration time, error/coherence/duration medians, dt, processor identity |
 
-### Backend resolution
+`TaskSpec` carries: `idempotency_key`
+(`<Circuit-UID>/<observedGeneration>`), `qasm`, `shots`,
+`target{provider, backend_name, kind}`, optional `optimization_level` and
+`timeout_seconds`, and the two Tier-2 passthrough Structs
+(`transpile_options`, `execute_options`).
 
-The controller resolves the selected QPU by name, and the executor reads the provider/backend from the resolved `QPU`, not from free-form user strings alone.
+Error semantics, the contract's most important property: adapter and
+provider failures are reported in-band, as `status=FAILED` plus an
+`error_reason` that is a Circuit condition reason and an `error_message`.
+`SubmitTask` is the one exception: it uses gRPC status codes with the
+reason encoded as `Reason: message` in the status details.
+Transport-level errors mean "transient, retry"; in-band failures mean
+"terminal, record on the Circuit". Clients must preserve that split; the
+controller's whole retry story rests on it
+([engineering.md](./engineering.md#2-reliability)).
 
-### Provider values and future adapters
+## Networking
 
-The runtime currently recognizes these provider values:
+| Path | Protocol and port | Security |
+|---|---|---|
+| CLI / kubectl to API server | Kubernetes API | kubeconfig auth, TLS (cluster-managed) |
+| controller to executor | gRPC, ClusterIP `quantum-circuit-controller-executor:9000` | plaintext, in-cluster only, no mTLS yet |
+| controller to OTel Collector | OTLP/gRPC `:4317` (`monitoring` namespace) | plaintext, in-cluster convention |
+| Prometheus to Collector | scrape `:8889` | in-cluster |
+| kubelet to controller | health probes `:8081` (`/healthz`, `/readyz`) | HTTP |
+| controller-runtime metrics | `:8443`, authn/authz-filtered HTTPS | served, not scraped by default |
+| executor to IBM Quantum | HTTPS egress | vendor TLS, token auth |
 
-| `QPU.spec.provider` | Meaning |
-|---|---|
-| empty or `local` | Qiskit Aer and `fake_*` simulator snapshots |
-| `ibm` | IBM Quantum through `qiskit-ibm-runtime` |
+The CLI never needs network reach to the executor or a provider. The
+plaintext gRPC and OTLP hops are an explicit single-tenant, in-cluster
+assumption; read the [security posture](./operations.md#security-posture)
+before changing that topology.
 
-Future providers should be documented as adapter implementations, not as schema changes. The intended extension paths are:
+## Behavioral notes
 
-- a generic Qiskit-provider adapter for ecosystems such as Amazon Braket via `qiskit-braket-provider`
-- OpenQASM runtime adapters for services that accept OpenQASM payloads directly
-- substrate-specific adapters such as QRMI, CUDA-Q, or vendor-direct SDKs
-
-The minimum contract is broader than accepting circuit text. A provider adapter must expose backend facts, submit/watch/fetch lifecycle behavior, error mapping, and normalized counts/results that the controller can persist in `Circuit.status`.
-
-### Effective backend name
-
-If `QPU.spec.backendName` is empty, the code derives it from `metadata.name` by replacing dashes with underscores.
-
-### Effective qubit count
-
-Selection prefers `QPU.status.qubits` when probing has populated it, and falls back to `QPU.spec.qubits` otherwise.
-
-### Provider credential behavior
-
-This is important because the schema and runtime are currently different.
-
-- the schema exposes `QPU.spec.access.credentialSecretRef`
-- the runtime loads IBM credentials from executor deployment env vars
-- QPU objects do not currently select different credentials at runtime
-
-Treat `credentialSecretRef` as future-facing contract surface, not live behavior.
-
-## Current Contract Gaps
-
-These matter if you are treating the CRDs as a strict external contract. The shipped/partial/absent matrix lives in the implementation status section in [`README.md`](./README.md#implementation-status).
-
-- `QPU.spec.access.credentialSecretRef` is documented but not wired into executor credential loading
-- `allowedQPURefs` and `region` are documented API fields but not enforced in backend selection yet
-- `Circuit.status.traceId` is reserved but not populated
-- `queueDepth` and `lastError` exist on the `QPU` schema but are not central parts of the current runtime behavior
+- Qiskit input: `source.format: qiskit` bodies are executed server-side
+  in an isolated module namespace and the first `QuantumCircuit` is
+  extracted (prefer a top-level variable named `circuit`); the converted
+  OpenQASM 3 is persisted as the `convertedRef` artifact.
+- Backend-name matching: a selector's `backendName` matches either the
+  QPU's Kubernetes name (`fake-brisbane`) or its provider-native name
+  (`fake_brisbane`).
+- Effective qubits: selection prefers probed `status.qubits`, falling
+  back to the `spec.qubits` hint.
+- Credentials: one executor-level IBM token serves all `ibm` QPUs today
+  ([operations.md](./operations.md#ibm-credentials));
+  `credentialSecretRef` is future contract surface.
