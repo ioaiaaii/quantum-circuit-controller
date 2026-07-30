@@ -21,6 +21,9 @@ kubebuilder = "4.14.0"
 "golangci-lint" = "2.11.4"
 buf = "1.50.0"
 
+# Docs link checker (offline mode gates relative links + anchors in CI)
+"aqua:lycheeverse/lychee" = "0.24.2"
+
 # Kubebuilder/controller-runtime Go tools (installed via the Go backend so
 # they track the same versions referenced by the project's go.mod).
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "v0.20.1"
