@@ -24,7 +24,7 @@ make lint executor-lint # golangci-lint, ruff
 ```
 
 The full loops, including the local two-terminal dev setup, are in
-[docs/engineering.md](./docs/engineering.md#working-on-qcc).
+[docs/engineering.md](./docs/engineering.md#build-and-test).
 
 ## Pull requests
 
@@ -36,7 +36,7 @@ The full loops, including the local two-terminal dev setup, are in
   run `make proto-breaking` before opening the PR.
 - Match the codebase conventions: rationale comments (why, not what), the
   terminal-versus-transient error rule, pure decision functions. See
-  [docs/engineering.md](./docs/engineering.md#principles).
+  [docs/engineering.md](./docs/engineering.md#qcc-internals).
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`,
   `test:`, `chore:`).
 
