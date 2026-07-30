@@ -1,7 +1,5 @@
 """Executor gRPC integration test (in-process channel, Aer adapter)."""
 
-import grpc
-import pytest
 from google.protobuf import struct_pb2
 
 from qcc_executor.protostubs import executor_pb2, executor_pb2_grpc

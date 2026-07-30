@@ -27,8 +27,7 @@ import time
 from typing import Any
 
 import grpc
-from google.protobuf import json_format
-from google.protobuf import struct_pb2
+from google.protobuf import json_format, struct_pb2
 
 from qcc_executor import qiskit_io
 from qcc_executor.adapters import (
