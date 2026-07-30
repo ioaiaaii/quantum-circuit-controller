@@ -3,6 +3,7 @@ name = "qcc-executor"
 version = "0.1.0"
 description = "QCC Executor — gRPC sidecar that runs quantum circuits via vendor adapters"
 readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
     "grpcio>=1.68",
