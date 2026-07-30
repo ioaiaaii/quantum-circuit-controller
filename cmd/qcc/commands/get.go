@@ -61,7 +61,7 @@ const (
 // empty string for unknown kinds — the caller emits a friendly error.
 func normalizeKind(s string) kindKey {
 	switch strings.ToLower(s) {
-	case "circuit", "circuits", "c", "circ":
+	case string(kindCircuit), "circuits", "c", "circ":
 		return kindCircuit
 	case "qpu", "qpus", "qp":
 		return kindQPU
@@ -87,7 +87,7 @@ func newGetCmd(version string) *cobra.Command {
   qcc get circuit bell-draw-xy --draw  # raw ASCII drawing (pipe-friendly)
   qcc get circuit bell-sch-xy --schedule  # rendered ASCII timeline`,
 		Args:      argsWithHelp(cobra.MinimumNArgs(1)),
-		ValidArgs: []string{"circuit", "circuits", "qpu", "qpus"},
+		ValidArgs: []string{string(kindCircuit), "circuits", string(kindQPU), "qpus"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			selectors := 0
 			if o.qasm {
