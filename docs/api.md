@@ -286,7 +286,7 @@ reason encoded as `Reason: message` in the status details.
 Transport-level errors mean "transient, retry"; in-band failures mean
 "terminal, record on the Circuit". Clients must preserve that split; the
 controller's whole retry story rests on it
-([engineering.md](./engineering.md#2-reliability)).
+([engineering.md](./engineering.md#the-one-error-rule)).
 
 ## Networking
 

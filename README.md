@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/images/readme-banner-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./docs/assets/images/readme-banner-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/images/readme-banner.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/assets/images/readme-banner.svg">
   <img alt="QCC" src="./docs/assets/images/readme-banner.svg">
 </picture>
 

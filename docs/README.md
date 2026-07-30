@@ -12,7 +12,7 @@ first visits in about fifteen minutes.
 | [architecture.md](./architecture.md) | understand the design, the SRE principles behind it, and where QCC sits relative to QCSC, Qubernetes, Qonductor, and QRMI | 11 min |
 | [api.md](./api.md) | author `Circuit`/`QPU` resources, consume status, or program against the gRPC contract | 8 min |
 | [observability.md](./observability.md) | query the `qcc_*` metrics or use the dashboards | 6 min |
-| [engineering.md](./engineering.md) | change the code: principles, toolchain, adapters, build and test, CI | 9 min |
+| [engineering.md](./engineering.md) | change the code: build and test, packaging, release engineering, performance, security, internals | 9 min |
 | [operations.md](./operations.md) | deploy, configure credentials, understand the security posture, troubleshoot | 6 min |
 
 ## Implementation status
