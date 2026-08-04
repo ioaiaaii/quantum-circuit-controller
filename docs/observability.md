@@ -5,7 +5,7 @@ specification built entirely on cloud-native open standards, plus a query
 convention that lets ordinary PromQL answer cross-substrate questions
 without distributed tracing. This page is the reference; the dashboards in
 action, with screenshots, are in
-[demonstration.md](./demonstration.md#6-read-the-dashboards).
+[demonstration](./demonstration.md#read-the-dashboards).
 
 ## The four surfaces
 
@@ -23,7 +23,8 @@ aggregate view, many Circuits and QPUs at once.
 
 ## Telemetry pipeline
 
-Two data paths feed one Prometheus, so Grafana sees a single data source:
+Both data paths feed one Prometheus instance, so Grafana sees a single
+data source:
 
 ```mermaid
 flowchart LR
@@ -43,16 +44,14 @@ configuration, not a QCC change. The executor emits no telemetry of its
 own today; its work is visible through controller status, metrics, and
 logs.
 
-Two implementation patterns keep the reconcile hot path cheap and the
-series count bounded:
-
-- Resource-state metrics are observable gauges read from the
-  controller-runtime informer cache once per export cycle (the
-  kube-state-metrics idiom). The scrape path never touches the API
-  server; a gauge can lag a status change by up to one cycle (30 s).
-- Operational-event metrics (`qcc_circuits_total`, the phase-duration
-  histogram) are recorded synchronously at the moment of a lifecycle
-  transition (the controller-runtime idiom).
+The reconcile hot path stays cheap and the series count stays bounded
+because of how the two instrument families are collected. Resource-state
+metrics are observable gauges read from the controller-runtime informer
+cache once per export cycle, the kube-state-metrics idiom. The scrape path
+never touches the API server, and a gauge can lag a status change by up to
+one cycle, thirty seconds by default. Operational-event metrics, meaning `qcc_circuits_total` and the
+phase-duration histogram, are recorded synchronously at the moment of a
+lifecycle transition, which is the controller-runtime idiom.
 
 ## Metric specification
 
@@ -124,22 +123,25 @@ Dimension semantics:
   2^q series for a q-qubit readout, fine at small-circuit scale and
   budgeted, revisit beyond.
 
-Three deliberate design points:
+Some of these repay a closer look.
 
-- The phase-duration pair. The histogram gives fleet-wide percentiles via
-  `histogram_quantile`; the `_observed` gauge is recomputed from
-  condition timestamps every cycle, so per-Circuit panels survive
-  controller restarts and Prometheus's staleness window. Same numbers,
-  two lifetimes.
-- `qcc_circuit_usage_seconds` is the substrate's own billable on-QPU time
-  (Qiskit Runtime `Job.usage()`), emitted only when the substrate reports
-  it, so any value in Prometheus marks a real-hardware run. Dividing it
-  by the `Running` duration gives the orchestration overhead.
-- The cross-boundary handle. The provider job ID is promoted onto
-  `qcc_circuit_info` as `provider_job_id`. Given a job ID from a vendor
-  console or billing export, one PromQL lookup returns the Circuit's full
-  identity; given a Circuit, the ID sits on its status. The link reads
-  from either side with no trace-context channel.
+The phase-duration pair carries the same numbers with two lifetimes. The
+histogram gives fleet-wide percentiles through `histogram_quantile`, while
+the `_observed` gauge is recomputed from condition timestamps on every
+cycle, so per-Circuit panels survive controller restarts and Prometheus's
+staleness window.
+
+`qcc_circuit_usage_seconds` is the substrate's own billable on-QPU time,
+taken from the Qiskit Runtime `Job.usage()` handle and emitted only when
+the substrate reports it, so any value in Prometheus marks a real-hardware
+run. Dividing it by the `Running` duration gives the orchestration
+overhead.
+
+The cross-boundary handle is the provider job ID, promoted onto
+`qcc_circuit_info` as `provider_job_id`. Given a job ID from a vendor
+console or a billing export, one PromQL lookup returns the Circuit's full
+identity, and given a Circuit the same ID sits on its status. The link
+reads from either side without a trace-context channel.
 
 ## Algorithm-aware queries
 
@@ -185,7 +187,7 @@ sum by (reason) (increase(qcc_circuits_total{phase="Failed"}[24h]))
 
 ## Dashboards
 
-Two source-controlled dashboards ship as ConfigMaps under
+Both dashboards ship as source-controlled ConfigMaps under
 [`../deploy/grafana/`](../deploy/grafana/) (label `grafana_dashboard: "1"`,
 picked up by the kube-prometheus-stack sidecar; install with
 `kubectl apply -f deploy/grafana/`):
@@ -224,7 +226,8 @@ the logs keep the stack trace.
 
 ## What is not here yet
 
-Distributed tracing (provider wired, no spans exported), executor-side
-telemetry, and Kubernetes Events are absent by design in this release.
-See the [implementation status matrix](./README.md#implementation-status)
-for the full inventory.
+Distributed tracing has its provider wired but exports no spans,
+executor-side telemetry is not instrumented, and Kubernetes Events are not
+emitted. All three are deferred rather than ruled out, and the
+[implementation status](./status.md) records them alongside the rest of
+the design.

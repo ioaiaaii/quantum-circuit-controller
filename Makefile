@@ -189,14 +189,16 @@ lint-fix: $(GOLANGCI_LINT_BIN) ## Run golangci-lint with --fix.
 lint-config: $(GOLANGCI_LINT_BIN) ## Verify the golangci-lint configuration.
 	$(GOLANGCI_LINT_BIN) config verify
 
-# Checks every git-tracked markdown file (matching the docs.yml trigger),
-# so CONTRIBUTING.md, SECURITY.md, and component READMEs are covered too.
-# --offline keeps the gate hermetic (external URLs are skipped, so PR runs
-# can't flake on third-party outages); --include-fragments verifies heading
-# anchors, which is where doc rot actually shows up.
+# Checks every git-tracked markdown file.
 .PHONY: docs-check
 docs-check: ## Verify links and heading anchors in all tracked markdown (offline).
 	git ls-files -co --exclude-standard '*.md' | xargs lychee --offline --include-fragments --no-progress
+
+.PHONY: docs-demo
+docs-demo: ## Record the README demo GIF (needs a running deployment).
+	vhs docs/assets/demo.tape
+	@echo "Recorded docs/assets/figures/qcc-demo.gif — reference it at width=\"864\""
+	@ls -lh docs/assets/figures/qcc-demo.gif
 
 ##@ Build
 

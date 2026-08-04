@@ -18,19 +18,19 @@ executor Deployment and Service, and the metrics Service, all under the
 `quantum-circuit-controller-` name prefix in the
 `quantum-circuit-controller-system` namespace.
 
-Two facts that surprise people:
+No QPUs are installed by default. The operator-defaults directory,
+`config/qpu/`, is intentionally empty, so every backend is an explicit
+registration from `config/samples/qpu/` or from your own manifests. Until
+one QPU reports `Available`, a `mode=run` Circuit fails with
+`NoEligibleBackend`.
 
-- No QPUs are installed by default. `config/qpu/` (operator defaults) is
-  intentionally empty; every backend is an explicit registration from
-  `config/samples/qpu/` or your own manifests. Until one `QPU` is
-  `Available`, every `mode=run` Circuit fails with `NoEligibleBackend`.
-- The observability stack is separate. `make platform-up` manages the
-  kind cluster and the monitoring namespace for local development. On a
-  real cluster, bring your own Prometheus, Grafana, and Collector, and
-  point the controller's `OTEL_EXPORTER_OTLP_ENDPOINT` at your Collector.
+The observability stack is deployed separately. `make platform-up` manages
+the kind cluster and the monitoring namespace for local development. On a
+real cluster, bring your own Prometheus, Grafana, and Collector, and point
+the controller's `OTEL_EXPORTER_OTLP_ENDPOINT` at that Collector.
 
 For the local kind flow see
-[getting-started.md](./getting-started.md).
+[tutorial](./getting-started.md).
 
 ## Configuration reference
 
@@ -84,30 +84,32 @@ Circuits are unaffected.
 
 ## Security posture
 
-QCC v1.0.x assumes a single-tenant, trusted cluster. Know these four
-facts before deploying anywhere shared:
+QCC v1.0.x assumes a single-tenant, trusted cluster. Four properties
+follow from that assumption and matter before deploying anywhere shared.
 
-1. Circuit sources are code. `source.format: qiskit` bodies are executed
-   with `exec()` inside the executor pod. Whoever can create a `Circuit`
-   can run Python in that pod. This is a deliberate trust decision
-   (circuit sources are programs by nature), acceptable only while
-   Circuit authors and cluster operators are the same trust domain.
-2. The controller-executor channel is plaintext gRPC on a ClusterIP
-   Service, and the executor performs no caller authentication. Anything
-   with in-cluster network reach to `:9000` can submit work. Mutual TLS
-   is future work; until then, network policy is the available control.
-3. One IBM token serves the whole cluster, mounted into the executor from
-   a Secret. There is no per-QPU or per-tenant credential isolation
-   (`credentialSecretRef` is schema-only).
-4. Pods are hardened, the boundary is not. Both deployments satisfy the
-   restricted Pod Security Standard (non-root, no privilege escalation,
-   capabilities dropped, seccomp), the controller image is distroless,
-   and RBAC is scoped to the QCC resources. None of that substitutes for
-   the tenancy boundary above.
+Circuit sources are code. A `source.format: qiskit` body is executed with
+`exec()` inside the executor pod, so whoever can create a Circuit can run
+Python there. This is a deliberate trust decision, since circuit sources
+are programs by nature, and it holds only while Circuit authors and
+cluster operators sit in the same trust domain.
 
-Multi-tenant deployment therefore requires executor sandboxing (or
-per-tenant executors), mTLS on the gRPC seam, per-tenant credentials, and
-NetworkPolicy. All of it is future work; none is present today.
+The controller-executor channel is plaintext gRPC on a ClusterIP Service,
+and the executor performs no caller authentication, so anything with
+in-cluster network reach to port 9000 can submit work. Mutual TLS is
+future work, and until it lands NetworkPolicy is the available control.
+
+One IBM token serves the whole cluster, mounted into the executor from a
+Secret. Per-QPU and per-tenant credential isolation is not implemented;
+`credentialSecretRef` exists on the schema only.
+
+The pods are hardened even though the boundary is not. Both deployments
+satisfy the restricted Pod Security Standard, the controller image is
+distroless, and RBAC is scoped to the QCC resources. None of that
+substitutes for the tenancy boundary above.
+
+Multi-tenant deployment therefore needs executor sandboxing or per-tenant
+executors, mTLS on the gRPC seam, per-tenant credentials, and
+NetworkPolicy, all of which remain future work.
 
 ## Scaling and sizing
 
@@ -121,22 +123,21 @@ scaling needs the durable registry listed under future work.
 The controller runs a single replica with leader election on; additional
 replicas are safe standbys.
 
-Sizing notes:
-
-- The controller is light (shipped requests: `10m` CPU, `64Mi`).
-- The executor is where memory goes. Aer statevector simulation is
-  exponential in qubit count (about 16 bytes times 2^n amplitudes: 25
-  qubits is roughly 0.5 GiB, 26 is 1 GiB). The shipped limit of `1Gi`
-  handles thesis-scale circuits; raise it before simulating beyond about
-  25 qubits statevector.
-- `fake_*` backends are Aer plus a noise model: same envelope, more CPU.
+The controller is light, with shipped requests of `10m` CPU and `64Mi`
+memory. The executor is where memory goes, because Aer statevector
+simulation is exponential in qubit count: roughly 16 bytes times 2^n
+amplitudes, which puts 25 qubits near 0.5 GiB and 26 near 1 GiB. The
+shipped limit of `1Gi` covers thesis-scale circuits, and simulating beyond
+about 25 statevector qubits needs it raised. A `fake_*` backend is Aer
+plus a noise model, so it holds the same memory envelope and costs more
+CPU.
 
 ## Health
 
-- Controller: HTTP `/healthz` and `/readyz` on `:8081`, wired to probes.
-- Executor: TCP-socket probes on `:9000`. A gRPC health-check service is
-  not implemented yet, so "port open" is the strongest liveness signal
-  available.
+The controller serves `/healthz` and `/readyz` over HTTP on port 8081,
+both wired to Kubernetes probes. The executor is checked with TCP-socket
+probes on port 9000; a gRPC health-checking service is planned, so an open
+port is the strongest liveness signal available today.
 
 ## Upgrades
 
@@ -150,7 +151,7 @@ Sizing notes:
 
 Work down this list; each step names the surface that answers it. The
 metric and status semantics behind these surfaces are in
-[observability.md](./observability.md).
+[metrics reference](./observability.md).
 
 ### A Circuit never leaves `Pending`
 
@@ -168,8 +169,8 @@ metric and status semantics behind these surfaces are in
   either the QPU's Kubernetes name (`fake-brisbane`) or its
   provider-native name (`fake_brisbane`).
 - `spec.shots` above the QPU's `capabilities.maxShots` also rejects it.
-- You assumed `allowedQPURefs` or `region` filter. They do not (schema
-  only).
+- `allowedQPURefs` and `region` do not narrow selection; both are
+  schema-only fields.
 
 ### A Circuit fails with `TranspilationFailed` or `InvalidCircuit`
 
@@ -209,17 +210,23 @@ the console.
 
 ## Known limitations
 
-Planned work, ordered by operational impact:
+The bounds of the current release, ordered by operational impact. Each is
+planned work rather than a permanent property.
 
-1. Executor restart loses in-flight async tasks (in-memory registry; a
-   durable, vendor-recoverable registry is future work).
-2. Submission-boundary window: a controller restart between a successful
-   `SubmitTask` and the status patch recording `providerJobId` orphans
-   the vendor job. The idempotency key bounds duplicates, not orphans.
-3. Single executor replica (see Scaling above).
-4. Optimistic IBM availability: probe failure leaves the QPU selectable.
-5. One credential per cluster; per-QPU `credentialSecretRef` is unwired.
-6. No Kubernetes Events; lifecycle detail lives in `status.conditions`
-   and logs.
-7. Calibration freshness: probed at registration; live-hardware
-   calibration drifts between probes until TTL-based re-probing lands.
+1. An executor restart loses in-flight asynchronous tasks, because the
+   registry is in memory. A durable, vendor-recoverable registry is
+   future work.
+2. A controller restart between a successful `SubmitTask` and the status
+   patch recording `providerJobId` orphans the vendor job. The
+   [idempotency key](./architecture.md#submission-and-the-cross-boundary-identifier)
+   bounds duplicates rather than orphans.
+3. The executor runs as a single replica, for the reason given under
+   [scaling and sizing](#scaling-and-sizing).
+4. IBM availability is optimistic, so a failed probe leaves the QPU
+   selectable.
+5. One credential serves the cluster; the per-QPU `credentialSecretRef`
+   is not yet wired to the runtime.
+6. Kubernetes Events are not emitted, so lifecycle detail lives in
+   `status.conditions` and the logs.
+7. Calibration is read at registration, so live-hardware values age
+   between probes until TTL-based re-probing lands.

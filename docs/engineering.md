@@ -3,10 +3,12 @@
 How QCC is built and how to work on it, organized by engineering domain:
 build and test, packaging, release engineering, performance, security, and
 the QCC internals themselves. The SRE principles behind these choices are
-mapped in [architecture.md](./architecture.md#sre-principles-mapped); this
+mapped in [SRE principles](./architecture.md#sre-principles-mapped); this
 document is the concrete practice.
 
 ## Repository map
+
+The directories you are most likely to touch, and what lives in each.
 
 ```
 api/v1alpha1/            Circuit + QPU types, conditions, labels, CRD markers
@@ -16,17 +18,20 @@ internal/controller/     CircuitReconciler, QPUReconciler + envtest suites
 internal/executor/       controller-side gRPC client (domain types, not protobuf)
 internal/observability/  OTel SDK: resource, meter provider, metrics, tracer stub
 internal/cli/            kubeclient + render (styles, spinner, tables, histogram)
+qcc-executor/            Python service: servicer, adapters, qiskit_io, tests
 proto/qcc/executor/v1/   the gRPC contract, single source of truth
 gen/proto/               generated Go stubs (committed)
-qcc-executor/            Python service: servicer, adapters, qiskit_io, tests
+test/e2e/                end-to-end suite, build tag `e2e`
 config/                  kustomize tree: CRDs, RBAC, manager + executor, samples
 deploy/                  kind + observability platform values, Grafana dashboards
+build/                   Dockerfiles, CI configs, changelog templates
+hack/                    developer scripts and boilerplate
 examples/thesis/         the Shor evaluation kit (algorithms, circuits, render.py)
 ```
 
 ## Build and test
 
-**Toolchain, two authorities.** Go is pinned by the `toolchain` directive
+Go is pinned by the `toolchain` directive
 in `go.mod`; any recent Go auto-fetches it. Everything else (`kubectl`,
 `kind`, `helm`, `kustomize`, `kubebuilder`, `buf`, `golangci-lint`,
 `lychee`, `controller-gen`, `setup-envtest`, `python`, `uv`) is pinned in
@@ -36,7 +41,7 @@ Python dependencies are locked in `uv.lock` and installed with
 `--frozen`, so the simulator results the evaluation rests on are not
 exposed to silent dependency drift.
 
-**Targets.**
+The everyday targets:
 
 ```bash
 make build           # controller into dist/qcc-controller
@@ -49,19 +54,19 @@ make docs-check      # link + anchor check over all markdown
 make test-e2e        # full deploy against a dedicated kind cluster
 ```
 
-**Generated code is committed.** Protobuf stubs (`gen/proto/`,
+Generated code is committed. Protobuf stubs (`gen/proto/`,
 `qcc-executor/src/qcc_executor/proto/`) and controller-gen outputs (CRDs,
 RBAC, DeepCopy) live in the tree: contract changes appear in diffs, and
 consumers build without the generator toolchain. Never hand-edit
 generated files; regenerate with `make proto-generate` and
 `make manifests generate`.
 
-**Lint is a build product.** Go linting runs a custom golangci-lint
+Linting is a build product of its own. Go uses a custom golangci-lint
 binary (built by `make lint-build` from `.custom-gcl.yml`) that bundles
 project plugins such as logcheck. Python is ruff-clean with generated
 code excluded.
 
-**What the test suites actually cover.**
+What the suites cover:
 
 - `internal/controller/` runs against envtest, a real kube-apiserver and
   etcd: the reconcilers driven through the full phase machine with a fake
@@ -74,7 +79,8 @@ code excluded.
 - `test/e2e/` (build tag `e2e`) deploys the real images into an isolated
   kind cluster: a manager-up and metrics-served smoke test.
 
-**Local dev loop**, controller and executor as local processes:
+The tightest local loop runs the controller and executor as local
+processes:
 
 ```bash
 make dev-up                                            # kind + platform + CRDs
@@ -88,37 +94,37 @@ rebuilds and redeploys both images.
 
 ## Package
 
-**Images.** The controller builds to `gcr.io/distroless/static:nonroot`:
+The controller builds to `gcr.io/distroless/static:nonroot`:
 a static Go binary, no shell, no package manager. The executor is
 `python:3.12-slim` with a dedicated non-root user and a `uv`-built venv,
 dependency layer cached separately from source. Both deployments satisfy
 the restricted Pod Security Standard (non-root, no privilege escalation,
 capabilities dropped, seccomp RuntimeDefault).
 
-**Deployment packaging.** Kustomize (`config/default`) composes CRDs,
+Kustomize composes the deployment: `config/default` gathers CRDs,
 RBAC, the controller, the executor, and the metrics Service under one
 name prefix, the kubebuilder-standard layout. Helm packaging and
 published images are roadmap items; today the install path is
-build-and-load ([getting-started.md](./getting-started.md)).
+build-and-load ([tutorial](./getting-started.md)).
 
 ## Release engineering
 
-**Versioning.** The `v1.0.x` line is the frozen thesis artifact (the
+The `v1.0.x` line is the frozen thesis artifact (the
 manuscript cites v1.0.0); new work targets `v1.1.0`. Interfaces
 (`qcc.io/v1alpha1`, the executor gRPC contract, the `qcc_*` metrics
 specification) are stable within a minor line but carry no compatibility
 promise yet.
 
-**Commits and changelog.** Conventional Commits (`feat:`, `fix:`,
+Commits follow Conventional Commits (`feat:`, `fix:`,
 `docs:`, `chore:`), enforced by the commitlint configuration under
 `build/changelog/`, which also carries the changelog templates used at
 release time.
 
-**Contract evolution gates.** The gRPC contract is guarded by `buf`:
+The gRPC contract is guarded by `buf`:
 lint, format, and `make proto-breaking` against `main`, so the wire
 contract gets the same review discipline as the CRD schema. CRD changes
 stay additive within `v1alpha1`; any schema-only (unenforced) field is
-documented as such in [api.md](./api.md). To change either contract:
+documented as such in [API reference](./api.md). To change either contract:
 
 ```bash
 # gRPC
@@ -128,8 +134,8 @@ make proto-breaking
 make manifests generate && make install && make test
 ```
 
-**CI.** Six workflows, all with SHA-pinned actions and least-privilege
-permissions:
+Every workflow pins its actions by commit SHA and runs with
+least-privilege permissions:
 
 | Workflow | Runs |
 |---|---|
@@ -146,46 +152,45 @@ roadmap items.
 
 ## Performance
 
-The performance-sensitive paths and the budgets that protect them:
+The reconcile hot path carries almost no telemetry work. Only two event
+instruments record inside reconcile, `qcc_circuits_total` and the
+phase-duration histogram, and only at transitions. Everything else is an
+observable gauge read from the controller-runtime informer cache once per
+export cycle, one `List()` per resource family, so the scrape path never
+touches the API server. The cost is staleness: a gauge can lag a status
+change by up to one cycle, thirty seconds by default.
 
-- **Reconcile hot path.** Only the two event instruments
-  (`qcc_circuits_total`, the phase-duration histogram) record inside
-  reconcile, at transitions. Everything else is an observable gauge read
-  from the controller-runtime informer cache once per export cycle: one
-  `List()` per resource family per cycle, and the scrape path never
-  touches the API server. Cost: a gauge can lag a status change by up to
-  one cycle (30 s).
-- **Metric cardinality is budgeted per label.** Per-Circuit labels
-  (`uid`, `provider_job_id`) enrich existing series one-to-one; the
-  `bitstring` dimension grows 2^q per q-qubit readout and is flagged for
-  re-evaluation beyond small circuits; user labels reach metrics only
-  through the `qcc.io/*` allowlist, never wholesale.
-- **gRPC stream policy.** Async polling reads one `WatchTask` frame per
-  reconcile and closes the stream: matches the reconcile cadence, keeps
-  streams short-lived (sidecar and mesh friendly), trades a little
-  chattiness for bounded connection lifetimes.
-- **Executor concurrency and memory.** The gRPC thread pool defaults to
-  8 workers (`QCC_EXECUTOR_WORKERS`); the synchronous simulator path
-  occupies a worker for the duration of a run. Aer statevector memory is
-  exponential in qubit count; sizing guidance lives in
-  [operations.md](./operations.md#scaling-and-sizing).
-- **Selection** is O(registered QPUs) per Circuit, negligible at registry
-  scale.
+Metric cardinality is budgeted per label rather than left to grow.
+Per-Circuit labels such as `uid` and `provider_job_id` enrich existing
+series one-to-one. The `bitstring` dimension grows as 2^q for a q-qubit
+readout, which is fine at small-circuit scale and flagged for
+re-evaluation beyond it. User labels reach metrics only through the
+`qcc.io/*` allowlist, never wholesale, because forwarding arbitrary
+labels would hand cardinality control to whoever creates Circuits.
+
+Asynchronous polling reads one `WatchTask` frame per reconcile and closes
+the stream. That matches the reconcile cadence and keeps streams
+short-lived, which sidecars and service meshes tolerate far better than
+held connections, at the cost of a little more chatter.
+
+The executor's gRPC thread pool defaults to eight workers, set by
+`QCC_EXECUTOR_WORKERS`, and the synchronous simulator path occupies one
+for the duration of a run. Aer statevector memory grows exponentially
+with qubit count, so sizing guidance lives under
+[scaling and sizing](./operations.md#scaling-and-sizing). Selection is
+O(registered QPUs) per Circuit, which is negligible at registry scale.
 
 ## Security
 
-- **Supply chain.** Actions pinned by commit SHA; toolchain and
-  dependency versions pinned (`.mise.toml`, `go.mod`, `uv.lock`);
-  generated stubs committed and reviewed rather than produced at build
-  time; CI runs with `permissions: contents: read`.
-- **Runtime.** Distroless controller image, non-root executor,
-  restricted-PSS pods, RBAC scoped to the QCC resources plus the
-  ConfigMaps the controller owns.
-- **Trust boundaries.** The deliberate single-tenant assumptions
-  (plaintext in-cluster gRPC, `exec()` of circuit sources, one shared
-  IBM token) are stated as posture, not hidden:
-  [operations.md](./operations.md#security-posture). Vulnerability
-  reporting: [SECURITY.md](../SECURITY.md).
+On the supply-chain side, actions are pinned by commit SHA, and toolchain
+and dependency versions are pinned in `.mise.toml`, `go.mod`, and
+`uv.lock`. Generated stubs are committed and reviewed rather than produced
+at build time, and CI runs with `permissions: contents: read`.
+
+The runtime posture, both the pod hardening and the single-tenant
+assumptions behind it, is in
+[security posture](./operations.md#security-posture). Vulnerability
+reporting goes through [SECURITY.md](../SECURITY.md).
 
 ## QCC internals
 
@@ -196,71 +201,72 @@ The code-level rules and mechanisms specific to this codebase.
 Every error is classified exactly once, at the executor-client boundary
 (`internal/executor/client.go`):
 
-- `*executor.TaskError` carries a Circuit condition reason
-  (`TranspilationFailed`, `NoEligibleBackend`) and is **terminal**: the
-  reconciler marks the Circuit `Failed` and stops.
-- Anything else is a transport failure and is **transient**: log,
-  requeue, stay in phase.
+An `*executor.TaskError` carries a Circuit condition reason such as
+`TranspilationFailed` or `NoEligibleBackend`, and it is terminal: the
+reconciler marks the Circuit `Failed` and stops. Anything else is a
+transport failure and therefore transient: log it, requeue, stay in the
+current phase.
 
 The Python side upholds the rule by reporting adapter failures in-band
 (`status=FAILED` plus `error_reason`) instead of letting exceptions
 become transport errors. No reconciler call-site carries its own retry
 policy. Never collapse the two classes.
 
-### Idempotency and the submission boundary
-
-The controller persists `phase=Submitting` before the external submit
-call, and every submission carries an idempotency key built from the
-Circuit UID and observed generation, so a controller restart cannot
-double-submit silently. The provider job ID returns in the same patch
-that sets `phase=Running`; the remaining restart window between submit
-and that patch is a documented limitation
-([operations.md](./operations.md#known-limitations)).
-
 ### Controller notes
 
-- One phase per reconcile: `Reconcile` switches on `status.phase`; each
-  handler does one thing, patches status, requeues. A deferred hook
-  records the transition metrics only on real phase changes.
-- `qcc.io/run-index` is max(siblings)+1 without a transaction; two
-  concurrent reconciles can draw the same ordinal. Accepted: an atomic
-  counter resource costs more than a duplicate ordinal at this scale.
-- Probe failures are non-fatal: the QPU still becomes `Available` with
-  empty calibration, retried on the next reconcile.
-- Decision logic is kept in pure functions (selection filtering, status
-  derivation, metric attributes): values in, values out, no client, no
-  clock, tested without mocks.
+`Reconcile` handles one phase per pass. It switches on `status.phase`,
+and each handler does one thing, patches status, and requeues; a deferred
+hook records the transition metrics only when the phase actually changed.
+
+`qcc.io/run-index` is computed as max(siblings)+1 without a transaction,
+so two concurrent reconciles can draw the same ordinal. That is accepted
+rather than overlooked: an atomic counter resource costs more than a
+duplicate ordinal does at this scale.
+
+Probe failures are non-fatal. The QPU still becomes `Available` with empty
+calibration, and the next reconcile retries.
+
+Decision logic stays in pure functions, including selection filtering,
+status derivation, and metric attribute building. Values in, values out,
+no client and no clock, which is what lets them be tested without mocks.
 
 ### Executor notes
 
-- The async task registry is a lock-guarded in-memory dict (task ID to
-  adapter and job handle); `FetchTaskResult` pops the entry after
-  delivering counts. Restart loses in-flight tasks and replicas cannot
-  share the registry; both are accepted PoC scope, the Circuit resource
-  is the durable record.
-- `AerAdapter` resolves three backend families from the name:
-  `aer_<method>` (method-pinned simulator; pinning beats Aer's
-  circuit-dependent automatic selection for reproducibility), `fake_*`
-  (calibration snapshots via `FakeProviderForBackendV2`), and anything
-  else (generic noise-free Aer). The method is encoded in the resolver,
-  not a CRD field: provider construction belongs at the adapter
-  boundary.
-- `IBMAdapter` defends against SDK drift: counts extraction probes the
-  SamplerV2 DataBin for the first attribute with `get_counts()`,
-  `usage()` extraction tries three shapes, and the
-  `qcc.circuit.uid:<uid>` job-tag stamp can never fail a submission.
-- The wire boundary fixes types: protobuf Struct numbers are
-  double-only, so `seed_transpiler: 7` arrives as `7.0` and Qiskit would
-  reject it; the servicer coerces whole-number floats back to ints
-  (preserving bools) and strips `shots` from Tier-2 `execute` so the
-  Tier-1 field stays the single source of truth.
-- `dump_qasm` decomposes five rounds before export because Qiskit's
-  QASM 3 exporter rejects library subroutines such as QFT; a no-op on
-  primitive circuits.
-- `exec()` of `format: qiskit` sources is a trust decision, not an
-  oversight: circuit sources are code by nature and the executor pod is
-  the sandbox the submitter is already trusted with. Multi-tenant use
-  needs real isolation first.
+The asynchronous task registry is a lock-guarded in-memory dict mapping a
+task ID to its adapter and job handle, and `FetchTaskResult` pops the
+entry once it has delivered counts. A restart therefore loses in-flight
+tasks, and replicas cannot share the registry. Both are accepted
+proof-of-concept scope, because the Circuit resource is the durable
+record.
+
+`AerAdapter` resolves three backend families from the name it is given.
+An `aer_<method>` name pins the simulation method, which beats Aer's
+circuit-dependent automatic selection for reproducibility. A `fake_*`
+name loads a calibration snapshot through `FakeProviderForBackendV2`.
+Anything else falls back to generic noise-free Aer. The method lives in
+the resolver rather than a CRD field, because provider construction
+belongs at the adapter boundary.
+
+`IBMAdapter` is written to survive SDK drift. Counts extraction probes the
+SamplerV2 DataBin for the first attribute exposing `get_counts()`, the
+`usage()` reading tries three known shapes, and the
+`qcc.circuit.uid:<uid>` job tag is stamped best-effort so it can never
+fail a submission.
+
+The wire boundary fixes two type mismatches. Protobuf Struct numbers are
+double-only, so a `seed_transpiler: 7` written in YAML arrives as `7.0`
+and Qiskit rejects it; the servicer coerces whole-number floats back to
+integers while preserving bools. It also strips `shots` from the Tier-2
+`execute` block, leaving the Tier-1 field as the single source of truth.
+
+`dump_qasm` decomposes five rounds before export, because Qiskit's
+OpenQASM 3 exporter rejects library subroutines such as QFT. It is a no-op
+on circuits that are already primitive.
+
+Running `exec()` over a `format: qiskit` source is a trust decision rather
+than an oversight. Circuit sources are code by nature, and the executor
+pod is the sandbox the submitter is already trusted with. Multi-tenant use
+needs real isolation first.
 
 ### Conventions
 
@@ -347,7 +353,7 @@ accepted with it.
 ## Sharp edges
 
 Operational consequences live in
-[operations.md](./operations.md#known-limitations). Code-level ones:
+[known limitations](./operations.md#known-limitations). Code-level ones:
 `IBMAdapter.poll()` never returns `PENDING`, so the servicer's
 queue-position message path is currently unreachable; multi-register
 circuits collapse to one register's counts.

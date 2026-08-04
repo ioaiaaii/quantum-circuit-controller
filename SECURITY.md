@@ -3,12 +3,13 @@
 ## Supported versions
 
 QCC is a research proof of concept. Only the latest release on the
-`v1.0.x` line receives fixes.
+current minor receives fixes, as described under
+[versioning and support](./docs/releasing.md#versioning-and-support).
 
-## Threat model, stated plainly
+## Threat model
 
 Read the [security posture](./docs/operations.md#security-posture) before
-deploying. In short: QCC v1.0.x assumes a single-tenant, trusted cluster.
+deploying. In short, QCC assumes a single-tenant, trusted cluster.
 Circuit sources are executed as code inside the executor pod, the
 controller-executor gRPC channel is plaintext and unauthenticated inside
 the cluster, and one IBM credential serves the whole cluster. Reports that
