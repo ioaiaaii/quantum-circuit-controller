@@ -18,20 +18,7 @@
 QCC is a Kubernetes operator for hybrid quantum-classical execution. Quantum circuits and backends (QPUs) are modeled as custom resources. QCC registers and monitors QPU resources, and manages the orchestration of Circuit execution along with its observability instrumentation.
 
 
-<img alt="Result card for shor-2vv42 on ibm-kingston: backend calibration context, transpiled depth 2048, error-exposure verdict, and outcomes 0000:41 and 1000:41 of 1024 shots" src="./docs/assets/figures/qcc-demo.gif">
-
-<!-- 
-```bash
-qcc run shor.py --backend ibm-kingston --detach
-qcc get circuit shor-2vv42
-```
-
-<img alt="Result card for shor-2vv42 on ibm-kingston: backend calibration context, transpiled depth 2048, error-exposure verdict, and outcomes 0000:41 and 1000:41 of 1024 shots" src="./docs/assets/figures/circuit_get_shor_kingstone_v1.webp" width="600">
-
-*One execution under `qcc get circuit`: the calibration of the backend it
-landed on, the transpiled shape, an error-budget verdict for the circuit
-against that backend, and the measured outcome distribution. This is the
-8.0% result described below.* -->
+<img alt="Terminal session: kubectl get qpu listing simulators and IBM hardware with calibration, qcc get qpu on a real backend, the Shor circuit drawn, an execution on a fake-brisbane snapshot, a detached submission to ibm-kingston, and the result card with transpiled shape, error-exposure verdict, and measured outcomes" src="./docs/assets/figures/qcc-demo.gif" width="864">
 
 ## Motivation
 

@@ -12,14 +12,9 @@ Set Width 1728
 Set Height 1440
 Set FontSize 26
 Set Padding 20
-
-# Pinned so file size is predictable across machines rather than left to
-# whatever VHS picks. Menlo is pinned because JetBrains Mono, which VHS
-# prefers, is not installed here.
-Set Framerate 10
 Set FontFamily "Menlo"
-
 Set Theme "Github"
+Set Framerate 10
 Set TypingSpeed 35ms
 
 Hide
@@ -27,48 +22,47 @@ Type "clear" Enter
 Show
 
 Type "kubectl get qpu"
-Sleep 500ms
 Enter
-Sleep 4s
+Wait@30s
+Sleep 3s
 Type "clear" Enter
 
 Type "qcc get qpus"
-Sleep 500ms
 Enter
-Sleep 4s
+Wait@30s
+Sleep 3s
 Type "clear" Enter
 
 Type "qcc get qpu ibm-kingston"
-Sleep 500ms
 Enter
+Wait@30s
 Sleep 4s
 Type "clear" Enter
 
 Type "qcc draw examples/thesis/algorithms/shor.py"
-Sleep 500ms
 Enter
+Wait@75s
 Sleep 4s
 Type "clear" Enter
 
-Type "qcc run examples/thesis/algorithms/shor.py --backend fake-brisbane --algorithm shor --experiment demo --version v1"
-Sleep 500ms
+Type "qcc run examples/thesis/algorithms/shor.py --backend fake-brisbane --algorithm shor --experiment demo-gif --version v1 --timeout 2m"
 Enter
+Wait@135s
 Sleep 4s
 Type "clear" Enter
 
-Type "qcc run examples/thesis/algorithms/shor.py --backend ibm-kingston --algorithm shor --experiment demo --version v1 --detach"
-Sleep 500ms
+Type "qcc run examples/thesis/algorithms/shor.py --backend ibm-kingston --algorithm shor --experiment demo-gif --version v1 --detach --timeout 2m"
 Enter
+Wait@135s
 Sleep 4s
 Type "clear" Enter
 
-Type "qcc get circuits --experiment demo"
-Sleep 500ms
+Type "qcc get circuits --experiment demo-gif"
 Enter
-Sleep 4s
-Type "clear" Enter
+Wait@30s
+Sleep 5s
 
-Type "qcc get circuit shor-2vv42"
-Sleep 500ms
+Type "qcc get circuits shor-2vv42"
 Enter
-Sleep 4s
+Wait@30s
+Sleep 5s
