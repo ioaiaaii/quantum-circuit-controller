@@ -6,9 +6,12 @@
 # GOTOOLCHAIN=auto will auto-fetch the pinned toolchain on first invocation.
 
 [tools]
-# Language runtimes (Go is owned by go.mod, see note above)
+# Language runtimes (Go is owned by go.mod, see note above).
+# Every version here is pinned: a floating pin means today's green CI can
+# turn red tomorrow with no commit in between, which makes a failure
+# impossible to attribute.  Bump deliberately, in a commit.
 python = "3.12"
-uv = "latest"
+uv = "0.11.13"
 
 # Kubernetes operator development
 kubectl = "1.31.4"
@@ -21,10 +24,17 @@ kubebuilder = "4.14.0"
 "golangci-lint" = "2.11.4"
 buf = "1.50.0"
 
+# Docs link checker (offline mode gates relative links + anchors in CI)
+"aqua:lycheeverse/lychee" = "0.24.2"
+
 # Kubebuilder/controller-runtime Go tools (installed via the Go backend so
 # they track the same versions referenced by the project's go.mod).
+# setup-envtest publishes no tag on the 0.23 line that matches this
+# project's controller-runtime v0.23.3, so it is pinned to the immutable
+# pseudo-version the `release-0.23` branch resolved to rather than to the
+# branch itself, which moves.
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "v0.20.1"
-"go:sigs.k8s.io/controller-runtime/tools/setup-envtest" = "release-0.23"
+"go:sigs.k8s.io/controller-runtime/tools/setup-envtest" = "v0.0.0-20260305142021-f9589b9f2b9d"
 
 [env]
 # Keep envtest binaries in a stable, mise-friendly cache location.

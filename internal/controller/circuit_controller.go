@@ -943,7 +943,7 @@ func (r *CircuitReconciler) fail(ctx context.Context, circuit *qccv1alpha1.Circu
 func latestConditionTime(circuit *qccv1alpha1.Circuit) time.Time {
 	var latest time.Time
 	for _, c := range circuit.Status.Conditions {
-		if c.LastTransitionTime.Time.After(latest) {
+		if c.LastTransitionTime.After(latest) {
 			latest = c.LastTransitionTime.Time
 		}
 	}
@@ -957,7 +957,7 @@ func latestConditionReason(circuit *qccv1alpha1.Circuit) string {
 	var latest metav1.Condition
 	for i := range circuit.Status.Conditions {
 		c := circuit.Status.Conditions[i]
-		if c.LastTransitionTime.Time.After(latest.LastTransitionTime.Time) {
+		if c.LastTransitionTime.After(latest.LastTransitionTime.Time) {
 			latest = c
 		}
 	}

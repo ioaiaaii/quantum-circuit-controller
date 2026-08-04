@@ -1,0 +1,30 @@
+{
+  "title": "QCC: Quantum Circuit Controller",
+  "upload_type": "software",
+  "description": "A control plane for the quantum-classical interface. QCC brings declarative infrastructure, lifecycle orchestration, and standards-based observability to hybrid quantum-classical execution, treating quantum circuits and the backends that execute them as observable, schedulable resources. It is the proof-of-concept artifact of the MSc thesis \"Interface between Quantum and Classical Computers\" (Democritus University of Thrace, 2026).",
+  "creators": [
+    {
+      "name": "Savvaidis, Ioannis",
+      "affiliation": "Democritus University of Thrace"
+    }
+  ],
+  "license": "Apache-2.0",
+  "keywords": [
+    "quantum computing",
+    "quantum-classical interface",
+    "hybrid quantum-classical execution",
+    "kubernetes",
+    "operator",
+    "observability",
+    "opentelemetry",
+    "site reliability engineering",
+    "qiskit"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://ioaiaaii.github.io/project/msc-thesis/",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

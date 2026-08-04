@@ -5,7 +5,11 @@
 # See: https://golangci-lint.run/plugins/module-plugins/
 version: v2.11.4
 plugins:
-  # logcheck validates structured logging calls and parameters (e.g., balanced key-value pairs)
+  # logcheck validates structured logging calls and parameters (e.g., balanced key-value pairs).
+  # Pinned, not `latest`: the plugin's own dependencies participate in Go's
+  # minimal version selection when this binary is built, so a floating
+  # version can raise golang.org/x/tools and change which findings the
+  # bundled analyzers (modernize, staticcheck) report, with no code change.
   - module: "sigs.k8s.io/logtools"
     import: "sigs.k8s.io/logtools/logcheck/gclplugin"
-    version: latest
+    version: v0.10.1

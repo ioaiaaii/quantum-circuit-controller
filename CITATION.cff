@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use QCC in your work, please cite it as below."
+title: "QCC: Quantum Circuit Controller"
+type: software
+authors:
+  - family-names: Savvaidis
+    given-names: Ioannis
+repository-code: "https://github.com/ioaiaaii/quantum-circuit-controller"
+url: "https://ioaiaaii.github.io/project/msc-thesis/"
+abstract: >-
+  A control plane for the quantum-classical interface. QCC brings
+  declarative infrastructure, lifecycle orchestration, and standards-based
+  observability to hybrid quantum-classical execution, treating quantum
+  circuits and the backends that execute them as observable, schedulable
+  resources. It is the proof-of-concept artifact of the MSc thesis
+  "Interface between Quantum and Classical Computers".
+keywords:
+  - quantum computing
+  - quantum-classical interface
+  - hybrid quantum-classical execution
+  - kubernetes
+  - operator
+  - observability
+  - opentelemetry
+  - site reliability engineering
+  - qiskit
+license: Apache-2.0
+version: 1.0.2
+date-released: "2026-06-19"
+references:
+  - type: thesis
+    title: "Interface between Quantum and Classical Computers"
+    authors:
+      - family-names: Savvaidis
+        given-names: Ioannis
+    institution:
+      name: "Democritus University of Thrace"
+    thesis-type: "MSc thesis"
+    year: 2026
+    url: "https://ioaiaaii.github.io/project/msc-thesis/"

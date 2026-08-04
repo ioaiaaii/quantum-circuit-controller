@@ -161,6 +161,33 @@ func driveToTerminal(ctx context.Context, r *CircuitReconciler, name types.Names
 	return &circuit
 }
 
+// driveToPhase reconciles until the Circuit reaches want, or fails the
+// spec after maxSteps.  Prefer this over a hard-coded reconcile count:
+// the number of passes needed to reach a phase is an implementation
+// detail (label stamping alone consumes one), so counting couples the
+// test to the reconciler's internals.
+func driveToPhase(
+	ctx context.Context,
+	r *CircuitReconciler,
+	name types.NamespacedName,
+	want qccv1alpha1.CircuitPhase,
+	maxSteps int,
+) *qccv1alpha1.Circuit {
+	GinkgoHelper()
+	var circuit qccv1alpha1.Circuit
+	for range maxSteps {
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, name, &circuit)).To(Succeed())
+		if circuit.Status.Phase == want {
+			return &circuit
+		}
+	}
+	Fail(fmt.Sprintf("Circuit did not reach phase %q within %d reconciles (last: %q)",
+		want, maxSteps, circuit.Status.Phase))
+	return &circuit
+}
+
 func conditionByType(circuit *qccv1alpha1.Circuit, t string) *metav1.Condition {
 	for i, c := range circuit.Status.Conditions {
 		if c.Type == t {
@@ -562,13 +589,11 @@ var _ = Describe("CircuitReconciler", func() {
 		Expect(k8sClient.Create(ctx, circuit)).To(Succeed())
 		nn := types.NamespacedName{Name: circuit.Name, Namespace: circuit.Namespace}
 
-		// Drive through pre-submission phases.
-		for range 4 {
-			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-		}
-		var c qccv1alpha1.Circuit
-		Expect(k8sClient.Get(ctx, nn, &c)).To(Succeed())
+		// Drive through the pre-submission phases.  The number of passes
+		// is not asserted: label stamping consumes one reconcile before
+		// any phase work, so a hard-coded count silently rots whenever a
+		// pass is added or removed.  Drive until the phase we care about.
+		c := driveToPhase(ctx, r, nn, qccv1alpha1.PhaseSubmitting, 10)
 		Expect(c.Status.Phase).To(Equal(qccv1alpha1.PhaseSubmitting))
 
 		// Submitting reconcile — executor returns network error, should not mark Failed.
@@ -576,7 +601,7 @@ var _ = Describe("CircuitReconciler", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
-		Expect(k8sClient.Get(ctx, nn, &c)).To(Succeed())
+		Expect(k8sClient.Get(ctx, nn, c)).To(Succeed())
 		Expect(c.Status.Phase).To(Equal(qccv1alpha1.PhaseSubmitting), "should stay in Submitting on transient")
 	})
 })

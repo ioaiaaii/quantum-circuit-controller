@@ -227,7 +227,7 @@ func observeQPUs(
 		// matrix per the KSM Conditions pattern; exactly one
 		// `status` row is 1 per (qpu, condition) at any moment.
 		for _, cond := range qpu.Status.Conditions {
-			emitConditionRows(obs, inst.condition, baseAttrs, string(cond.Type), string(cond.Status))
+			emitConditionRows(obs, inst.condition, baseAttrs, cond.Type, string(cond.Status))
 		}
 	}
 	return nil

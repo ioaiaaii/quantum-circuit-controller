@@ -24,9 +24,14 @@ def test_aer_executes_bell_state():
     transpiled = adapter.transpile(BELL_QASM, FakeTarget())
     assert transpiled.depth > 0
     handle = adapter.submit(transpiled, shots=1000)
-    counts = adapter.fetch_result(handle)
-    assert sum(counts.values()) == 1000
-    assert set(counts).issubset({"00", "11"}), f"unexpected Bell outcomes: {counts}"
+    result = adapter.fetch_result(handle)
+    assert sum(result.counts.values()) == 1000
+    assert set(result.counts).issubset({"00", "11"}), (
+        f"unexpected Bell outcomes: {result.counts}"
+    )
+    # Aer reports no billable quantum-seconds; 0.0 is the documented
+    # "not reported" sentinel (see FetchResult in adapters/base.py).
+    assert result.usage_seconds == 0.0
 
 
 def test_aer_default_provider_alias():
@@ -130,8 +135,8 @@ def test_fake_brisbane_executes_bell_and_returns_counts():
     transpiled = adapter.transpile(BELL_QASM, FakeTarget())
     assert transpiled.depth > 0
     handle = adapter.submit(transpiled, shots=1000)
-    counts = adapter.fetch_result(handle)
-    assert sum(counts.values()) == 1000
+    result = adapter.fetch_result(handle)
+    assert sum(result.counts.values()) == 1000
     # Real noise → small probability of `01`/`10` outcomes; the support
     # is the full 2-bit space, not just {`00`,`11`} like noise-free Aer.
-    assert set(counts).issubset({"00", "01", "10", "11"})
+    assert set(result.counts).issubset({"00", "01", "10", "11"})

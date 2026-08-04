@@ -473,7 +473,7 @@ func jsonToStruct(j *apiextensionsv1.JSON, field string) (*structpb.Struct, erro
 	if j == nil || len(j.Raw) == 0 {
 		return nil, nil
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(j.Raw, &m); err != nil {
 		return nil, fmt.Errorf("decode %s as JSON object: %w", field, err)
 	}
