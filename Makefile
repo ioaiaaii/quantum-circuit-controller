@@ -11,10 +11,10 @@
 override OPERATOR_PATH  := build/repo-operator
 override DEFAULT_BRANCH := main
 
-# --- Repo-operator includes ---
-include ${OPERATOR_PATH}/makefiles/base.mk
-include ${OPERATOR_PATH}/makefiles/changelog.mk
-include ${OPERATOR_PATH}/makefiles/golang.mk
+# # --- Repo-operator includes ---
+# include ${OPERATOR_PATH}/makefiles/base.mk
+# include ${OPERATOR_PATH}/makefiles/changelog.mk
+# include ${OPERATOR_PATH}/makefiles/golang.mk
 
 # Pin GOTOOLCHAIN to the version go.mod declares.  Without this, a bootstrap
 # Go whose patch version differs from go.mod's pin (e.g. system 1.25.1 vs
