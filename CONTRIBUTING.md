@@ -5,8 +5,8 @@ context lives in [docs/engineering.md](./docs/engineering.md).
 
 ## Before you start
 
-- Read the [implementation status matrix](./docs/README.md#implementation-status)
-  so you build on a surface that exists.
+- Read the [implementation status](./docs/status.md) first, to establish
+  which subsystems are implemented before building on them.
 - Good entry points: the
   [known limitations](./docs/operations.md#known-limitations) list and the
   [provider adapter guide](./docs/engineering.md#adding-a-provider-adapter).
@@ -21,6 +21,7 @@ make tools-install      # pinned toolchain via mise
 make test               # Go unit + envtest suites
 make executor-test      # Python tests
 make lint executor-lint # golangci-lint, ruff
+make docs-check         # links and heading anchors in all markdown
 ```
 
 The full loops, including the local two-terminal dev setup, are in
@@ -29,7 +30,11 @@ The full loops, including the local two-terminal dev setup, are in
 ## Pull requests
 
 - Keep changes focused; one concern per PR.
-- CI must pass: tests, lint, executor, proto checks.
+- CI must pass: tests, lint, executor, proto, and docs checks.
+- Documentation follows the
+  [Kubernetes documentation style guide](https://kubernetes.io/docs/contribute/style/style-guide/):
+  second person, active voice, and one of the concept, task, tutorial, or
+  reference page shapes.
 - CRD changes: run `make manifests generate` and commit the generated
   files; keep `v1alpha1` additive.
 - gRPC changes: run `make proto-generate` and commit both language stubs;

@@ -1,21 +1,18 @@
 # qcc-executor
 
-`qcc-executor` is the Python execution service used by the Go controller.
+`qcc-executor` is the Python execution service behind the Go controller.
+It owns the Qiskit-heavy work: source loading, conversion, drawing, scheduling,
+transpilation, adapter dispatch, and provider submission, polling, and
+result retrieval. The controller reaches it over gRPC, and it writes no
+Kubernetes objects itself.
 
-It owns the Qiskit-heavy parts of QCC:
+For how it fits the rest of the system, see the
+[architecture](../docs/architecture.md#qcc-executor). For the RPC surface,
+see the [API reference](../docs/api.md#the-executor-grpc-contract). For
+configuration and credentials, see the
+[operations guide](../docs/operations.md#configuration-reference).
 
-- OpenQASM 3 and Qiskit-Python source loading
-- Qiskit-to-OpenQASM conversion
-- ASCII drawing
-- backend-specific scheduling
-- transpilation
-- adapter dispatch
-- provider submission, polling, and result retrieval
-
-The controller reaches it over the in-cluster gRPC service configured by
-`QCC_EXECUTOR_ADDR`. The executor does not write Kubernetes objects directly.
-
-## Local Development
+## Working in this directory
 
 ```sh
 uv sync
@@ -23,36 +20,27 @@ uv run pytest -v
 uv run qcc-executor
 ```
 
-`python -m qcc_executor` also works. The default bind address is
+`python -m qcc_executor` is equivalent. The default bind address is
 `0.0.0.0:9000`.
 
-## Adapters
+The package lives in `src/qcc_executor/`: `server.py` binds the gRPC
+server, `servicer.py` implements the eight RPCs, `qiskit_io.py` handles
+source loading and conversion, `adapters/` holds the provider adapters,
+and `proto/` holds the generated protobuf stubs. Regenerate the stubs
+from the repository root with `make proto`, and never edit them by hand.
 
-| provider | adapter | status |
-|---|---|---|
-| `local` or empty | `AerAdapter` | Qiskit Aer in-process execution, `fake_*` snapshots, and method-pinned variants such as `aer_statevector` |
-| `ibm` | `IBMAdapter` | IBM Quantum through `qiskit-ibm-runtime`; async submit/watch/fetch path |
-| future | generic `QiskitProviderAdapter` | possible path for Qiskit-provider plugins such as Amazon Braket through `qiskit-braket-provider` |
-| future | OpenQASM runtime adapter | possible path for runtimes that accept OpenQASM payloads but are not exposed as Qiskit providers |
-| future | substrate-specific adapter | possible path for QRMI, CUDA-Q, or vendor-direct integrations |
+## Adding an adapter
 
-Future rows are design direction only. They are not registered runtime adapters
-today. A new provider is not just a new string: it must implement backend
-inspection, transpilation or capability handling, submit/watch/fetch semantics,
-error mapping, and result normalization.
+The six-method adapter contract and the steps to add a provider are in the
+[adapter guide](../docs/engineering.md#adding-a-provider-adapter). Two
+adapters are registered today, `AerAdapter` for the `local` provider and
+`IBMAdapter` for `ibm`.
 
-## Environment
+## Sharp edges
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `QCC_EXECUTOR_ADDR` | `0.0.0.0:9000` | gRPC bind address |
-| `QCC_EXECUTOR_WORKERS` | `8` | thread-pool size |
-| `QCC_EXECUTOR_LOG_LEVEL` | `INFO` | Python logging level |
-| `QISKIT_IBM_TOKEN` | unset | required by `IBMAdapter` |
-| `QISKIT_IBM_CHANNEL` | `ibm_quantum_platform` | optional IBM Quantum channel override |
-
-## Runtime Limits
-
-- IBM credentials are read from executor environment variables, not from `QPU.spec.access.credentialSecretRef`.
-- Async task handles are stored in memory, so hardware jobs are not restart-tolerant across executor restarts.
-- The executor does not currently emit OpenTelemetry metrics or traces.
+IBM credentials come from executor environment variables rather than from
+`QPU.spec.access.credentialSecretRef`. Async task handles live in memory,
+so hardware jobs do not survive an executor restart. The executor exports
+no OpenTelemetry metrics or traces yet. The
+[implementation status](../docs/status.md) tracks
+all three.

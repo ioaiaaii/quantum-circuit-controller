@@ -1,25 +1,13 @@
-# QCC Documentation
+# Implementation status
 
-Seven documents, each with one job. Where design and implementation
-differ, the docs say so explicitly rather than describing the aspiration.
-The full set is about an hour of reading; the first two rows cover most
-first visits in about fifteen minutes.
+Each subsystem below is classified by implementation state. Shipped means
+implemented and on the normal runtime path, partial means present but
+caveated, and absent means not implemented.
 
-| Doc | Read it when you want to | Time |
-|---|---|---|
-| [getting-started.md](./getting-started.md) | stand QCC up, run your first circuit, look up any CLI command | 6 min |
-| [demonstration.md](./demonstration.md) | see the whole platform exercised: Shor across simulators, real IBM hardware, dashboards, transpiler tuning | 8 min |
-| [architecture.md](./architecture.md) | understand the design, the SRE principles behind it, and where QCC sits relative to QCSC, Qubernetes, Qonductor, and QRMI | 11 min |
-| [api.md](./api.md) | author `Circuit`/`QPU` resources, consume status, or program against the gRPC contract | 8 min |
-| [observability.md](./observability.md) | query the `qcc_*` metrics or use the dashboards | 6 min |
-| [engineering.md](./engineering.md) | change the code: build and test, packaging, release engineering, performance, security, internals | 9 min |
-| [operations.md](./operations.md) | deploy, configure credentials, understand the security posture, troubleshoot | 6 min |
-
-## Implementation status
-
-The single most useful table in these docs. Legend: **shipped** means
-implemented and on the normal runtime path; **partial** means present but
-caveated; **absent** means not implemented.
+Planned work is tracked in
+[issues](https://github.com/ioaiaaii/quantum-circuit-controller/issues),
+not here, so this page describes the system as it is and never as it is
+intended to become.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -56,6 +44,6 @@ caveated; **absent** means not implemented.
 
 ## Source-of-truth rule
 
-If the docs disagree with anything: the code wins, then these docs. The
+If the docs disagree with anything, the code wins, then these docs. The
 [thesis](https://ioaiaaii.github.io/project/msc-thesis/) documents the
 evaluated v1.0.0 snapshot; the repository moves on.

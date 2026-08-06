@@ -27,6 +27,11 @@ buf = "1.50.0"
 # Docs link checker (offline mode gates relative links + anchors in CI)
 "aqua:lycheeverse/lychee" = "0.24.2"
 
+# Terminal recorder for the README demo.  Needs ttyd and ffmpeg on PATH,
+# which mise does not provide; install those with the system package
+# manager.  Recording is a manual step, never part of CI.
+"aqua:charmbracelet/vhs" = "0.11.0"
+
 # Kubebuilder/controller-runtime Go tools (installed via the Go backend so
 # they track the same versions referenced by the project's go.mod).
 # setup-envtest publishes no tag on the 0.23 line that matches this

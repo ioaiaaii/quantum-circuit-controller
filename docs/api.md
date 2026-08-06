@@ -1,8 +1,8 @@
 # API
 
-QCC's API surface is two custom resources at `qcc.io/v1alpha1`: `Circuit`
-(namespaced; one execution, draw, schedule, or selection request) and
-`QPU` (cluster-scoped; one registered backend). The schema captures only
+QCC's API surface is two custom resources at `qcc.io/v1alpha1`. Circuit
+is namespaced and represents one execution, draw, schedule, or selection
+request. QPU is cluster-scoped and represents one registered backend. The schema captures only
 what the controller and executor act on. Algorithm semantics stay in user
 code, and vendor-specific construction stays behind the executor's
 adapters.
@@ -27,12 +27,12 @@ parameter would force a schema version per new transpiler flag; modeling
 too few would wall off the SDK's surface. QCC resolves this with two
 tiers:
 
-- Tier 1: typed camelCase fields QCC owns and validates. On `Circuit`:
+- Tier 1: typed camelCase fields QCC owns and validates. On Circuit:
   `mode`, `source`, `shots`, `optimizationLevel`, `backendSelector`,
-  `timeoutSeconds`. On `QPU`: `provider`, `backendName`, `kind`,
+  `timeoutSeconds`. On QPU: `provider`, `backendName`, `kind`,
   `qubits`, `access`, `capabilities`, `region`. Under a dozen per
   resource, slow-moving, exposed as CLI flags.
-- Tier 2: two open passthrough blocks on `Circuit`. The keys of
+- Tier 2: two open passthrough blocks on Circuit. The keys of
   `spec.transpile` become kwargs to Qiskit's `transpile()`; the keys of
   `spec.execute` become kwargs to the backend's run call
   (`AerSimulator.run()` or `SamplerV2.run()`). Keys are snake_case,
@@ -121,7 +121,7 @@ spec:
 |---|---|
 | `status.phase` | `Pending`, `Selecting`, `Transpiling`, `Submitting`, `Running`, `Rendering`, `Scheduling`, `Succeeded`, `Failed` |
 | `status.conditions` | eight types: `Accepted`, `Validated`, `Selected`, `Rendered`, `Scheduled`, `Submitted`, `Completed`, `Failed`; each with reason, message, timestamp |
-| `status.selectedQPU` | chosen `QPU` name |
+| `status.selectedQPU` | chosen QPU name |
 | `status.providerJobId` | the cross-boundary identifier (`aer-<uuid>` or the vendor's job ID) |
 | `status.results` | measurement counts, inline (`"0000": 517`) |
 | `status.usageSeconds` | substrate-reported billable on-QPU seconds (hardware only) |
@@ -136,7 +136,7 @@ Failure reasons on the `Failed` condition: `InvalidCircuit`,
 
 ### Artifacts
 
-Bulky generated payloads live in ConfigMaps the `Circuit` owns (same
+Bulky generated payloads live in ConfigMaps the Circuit owns (same
 namespace, garbage-collected with it), named `<circuit-name>-<suffix>`:
 
 | Ref | ConfigMap key | Read by |
@@ -147,9 +147,8 @@ namespace, garbage-collected with it), named `<circuit-name>-<suffix>`:
 
 ### Reserved labels
 
-Five labels carry algorithm-grouping metadata that the controller
-promotes into metric label-space
-([observability.md](./observability.md#algorithm-aware-queries)):
+The controller promotes five reserved labels into metric label-space
+([algorithm-aware queries](./observability.md#algorithm-aware-queries)):
 
 | Label | Owner | Stamped at | Notes |
 |---|---|---|---|
@@ -234,7 +233,7 @@ status:
     reason: ProviderProbeOK
 ```
 
-Three groups. Capability metadata (`qubits`, `basisGates`,
+Capability metadata (`qubits`, `basisGates`,
 `couplingEdges`, `processor`) describes what the backend is. Calibration
 metadata (`lastCalibrationTime`, `errorMedians`, `coherenceMedians`,
 `dtSeconds`, `instructionDurationMedians`) describes its current
@@ -286,7 +285,7 @@ reason encoded as `Reason: message` in the status details.
 Transport-level errors mean "transient, retry"; in-band failures mean
 "terminal, record on the Circuit". Clients must preserve that split; the
 controller's whole retry story rests on it
-([engineering.md](./engineering.md#the-one-error-rule)).
+([the one error rule](./engineering.md#the-one-error-rule)).
 
 ## Networking
 
@@ -317,5 +316,5 @@ before changing that topology.
 - Effective qubits: selection prefers probed `status.qubits`, falling
   back to the `spec.qubits` hint.
 - Credentials: one executor-level IBM token serves all `ibm` QPUs today
-  ([operations.md](./operations.md#ibm-credentials));
+  ([IBM credentials](./operations.md#ibm-credentials));
   `credentialSecretRef` is future contract surface.

@@ -1,42 +1,49 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./readme-banner.svg">
-  <img alt="QCC" src="./readme-banner.svg" height="48">
-</picture>
-
-![](./readme-banner-light.svg)
 # QCC brand assets
 
-Drop these into any repo. All marks are pure SVG (no font files required — they fall back through `IBM Plex Sans` → system sans).
+<img alt="QCC wordmark" src="./readme-banner.svg" width="420">
+
+Marks for the project README, social cards, and favicons. Every mark is
+pure SVG with no font files to ship.
 
 | File | Use |
 |---|---|
-| `qcc-mark-light.svg` | Default — README headers on light bg |
-| `qcc-mark-dark.svg` | Dark-mode README, GitHub dark theme |
-| `qcc-mark-blue.svg` | Hero / social card / OG image |
-| `qcc-icon.svg` | Square app icon (64 × 64, rounded) |
-| `favicon.svg` | Browser tab favicon (32 × 32) |
+| `readme-banner.svg` | the banner at the top of the project README |
+| `qcc-mark-light.svg` | wordmark on a light background |
+| `qcc-mark-dark.svg` | wordmark on a dark background |
+| `qcc-mark-blue.svg` | hero images, social cards, OG images |
+| `qcc-icon.svg` | square app icon, 64 by 64, rounded |
+| `favicon.svg` | browser tab favicon, 32 by 32 |
 
-## Tokens
+The remaining files in this directory are alternate banner crops and
+light or dark variants of the same marks.
+
+## Colors
 
 ```
 ink           #161616
 paper-dim     #f4f4f4
-phase / 60    #0f62fe   ← primary
-phase / 30    #a6c8ff   ← dot on dark
+phase / 60    #0f62fe   primary
+phase / 30    #a6c8ff   dot on dark
 night         #0a0a16
 ```
 
-## Usage in a README
+## Using a mark
 
-GitHub auto-switches with `#gh-light-mode-only` / `#gh-dark-mode-only`:
+GitHub picks the variant from the reader's color scheme:
 
-```md
+```html
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/qcc-mark-dark.svg">
-  <img alt="QCC" src="brand/qcc-mark-light.svg" height="48">
+  <source media="(prefers-color-scheme: dark)" srcset="qcc-mark-dark.svg">
+  <img alt="QCC" src="qcc-mark-light.svg" height="48">
 </picture>
 ```
 
-## Note on fonts
+Alt text is required. It should say what the mark is, not that it is an
+image.
 
-For pixel-perfect kerning, outline the glyphs (open the SVG in Figma/Illustrator → "Convert to outlines" → re-export). Until then, the SVGs use a font stack and look correct anywhere IBM Plex Sans is installed.
+## Fonts
+
+The SVGs use a font stack that starts at `IBM Plex Sans` and falls back
+to the system sans-serif, so they render everywhere but kern exactly only
+where IBM Plex Sans is installed. Converting the glyphs to outlines in a
+vector editor before re-exporting makes the kerning fixed.
