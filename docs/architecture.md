@@ -285,21 +285,17 @@ reference implementation others can run, extend, and disagree with.
 ### Scalability model
 
 Registered QPUs scale freely, since the registry is cluster-scoped and
-probes are one-shot. Circuit submission scales per namespace, controller
-availability comes from leader-elected standbys, and the read path scales
-because metrics observe from informer caches rather than the API server.
+probes are one-shot. Selection is O(registered QPUs) per circuit,
+negligible at registry scale, and the read path scales because metrics
+observe from informer caches rather than the API server. The binding
+constraint is the executor, whose process-local task registry caps it at
+one replica; [scaling and sizing](./operations.md#scaling-and-sizing)
+covers that and the memory envelope.
 
-One executor replica is the maximum, because the
-asynchronous task registry is process-local. The synchronous simulator
-path parks a reconcile worker for the duration of a run. Selection is
-O(registered QPUs) per circuit, negligible at registry scale. Sizing
-guidance is in [scaling and sizing](./operations.md#scaling-and-sizing).
-
-A durable task registry unlocks
-horizontal executor scaling, hardware allocation belongs below QCC in a
-QRMI, device-plugin, or DRA layer as that matures, and calibration-aware
-scoring extends the existing selection seam using telemetry the platform
-already emits.
+A durable task registry unlocks horizontal executor scaling, hardware
+allocation belongs below QCC in a QRMI, device-plugin, or DRA layer as
+that matures, and calibration-aware scoring extends the existing
+selection seam using telemetry the platform already emits.
 
 ## What's next
 

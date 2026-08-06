@@ -109,16 +109,12 @@ build-and-load ([tutorial](./getting-started.md)).
 
 ## Release engineering
 
-The `v1.0.x` line is the frozen thesis artifact (the
-manuscript cites v1.0.0); new work targets `v1.1.0`. Interfaces
-(`qcc.io/v1alpha1`, the executor gRPC contract, the `qcc_*` metrics
-specification) are stable within a minor line but carry no compatibility
-promise yet.
+Versioning, branching, and support policy are in the
+[release guide](./releasing.md). What belongs here is how to change a
+contract without breaking it, and what CI runs while you do.
 
-Commits follow Conventional Commits (`feat:`, `fix:`,
-`docs:`, `chore:`), enforced by the commitlint configuration under
-`build/changelog/`, which also carries the changelog templates used at
-release time.
+Commitlint configuration and the changelog templates live under
+`build/changelog/`.
 
 The gRPC contract is guarded by `buf`:
 lint, format, and `make proto-breaking` against `main`, so the wire
