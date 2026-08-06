@@ -12,9 +12,9 @@ override OPERATOR_PATH  := build/repo-operator
 override DEFAULT_BRANCH := main
 
 # --- Repo-operator includes ---
-# include ${OPERATOR_PATH}/makefiles/base.mk
-# include ${OPERATOR_PATH}/makefiles/changelog.mk
-# include ${OPERATOR_PATH}/makefiles/golang.mk
+include ${OPERATOR_PATH}/makefiles/base.mk
+include ${OPERATOR_PATH}/makefiles/changelog.mk
+include ${OPERATOR_PATH}/makefiles/golang.mk
 
 # Pin GOTOOLCHAIN to the version go.mod declares.  Without this, a bootstrap
 # Go whose patch version differs from go.mod's pin (e.g. system 1.25.1 vs
@@ -53,7 +53,7 @@ SHELL := /usr/bin/env bash -o pipefail
 .PHONY: all
 all: build
 
-#@ General
+##@ General
 
 .PHONY: help
 help: ## Display this help.
