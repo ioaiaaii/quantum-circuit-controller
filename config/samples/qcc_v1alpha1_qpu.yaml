@@ -1,0 +1,9 @@
+apiVersion: qcc.io/v1alpha1
+kind: QPU
+metadata:
+  labels:
+    app.kubernetes.io/name: quantum-circuit-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: qpu-sample
+spec:
+  # TODO(user): Add fields here

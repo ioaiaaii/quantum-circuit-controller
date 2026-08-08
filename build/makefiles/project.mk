@@ -45,6 +45,11 @@ CLI_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 # overriding it, so the scaffold's recipe still runs and no rename is needed.
 # `make lint` therefore covers Go, proto, Python, Dockerfiles and docs.
 
-generate: proto-generate
 lint: proto-lint executor-lint images-lint docs-check
 test: executor-test
+
+# Not `generate: proto-generate`. build, run, test, test-e2e and
+# build-installer all depend on generate, and buf generate calls the Buf
+# Schema Registry — that put a network round-trip on every build.
+.PHONY: generate-all
+generate-all: generate proto-generate ## Run every generator, including proto.

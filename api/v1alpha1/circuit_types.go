@@ -13,6 +13,7 @@ package v1alpha1
 import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // CircuitMode names the verb the controller should apply to the circuit
@@ -426,5 +427,8 @@ type CircuitList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Circuit{}, &CircuitList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &Circuit{}, &CircuitList{})
+		return nil
+	})
 }

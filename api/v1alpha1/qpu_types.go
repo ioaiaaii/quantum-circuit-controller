@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // QPUAvailability is the user-facing health state of a QPU candidate.
@@ -409,5 +410,8 @@ type QPUList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&QPU{}, &QPUList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &QPU{}, &QPUList{})
+		return nil
+	})
 }

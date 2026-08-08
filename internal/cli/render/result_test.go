@@ -15,19 +15,22 @@ import (
 	"testing"
 )
 
+// backendKey is the row label these render tests assert on.
+const backendKey = "backend"
+
 func TestKVAlignsAndOrdersRows(t *testing.T) {
 	out := KV([][2]string{
-		{"backend", "aer_simulator"},
+		{backendKey, "aer_simulator"},
 		{"shots", "1024"},
 		{"duration", "1.34s"},
 	})
-	for _, want := range []string{"backend", "aer_simulator", "shots", "1024", "duration", "1.34s"} {
+	for _, want := range []string{backendKey, "aer_simulator", "shots", "1024", "duration", "1.34s"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("KV missing %q\n--- got ---\n%s", want, out)
 		}
 	}
 	// Order preserved.
-	if i := strings.Index(out, "backend"); i > strings.Index(out, "shots") {
+	if i := strings.Index(out, backendKey); i > strings.Index(out, "shots") {
 		t.Errorf("KV reordered rows; backend should appear before shots\n%s", out)
 	}
 }
@@ -55,7 +58,7 @@ func TestHistogramEmpty(t *testing.T) {
 
 func TestSectionRendersTitleAndBodyWithoutBorder(t *testing.T) {
 	out := Section("results", "backend  aer_simulator\nshots    1024")
-	for _, want := range []string{"results", "backend", "1024"} {
+	for _, want := range []string{"results", backendKey, "1024"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Section missing %q\n--- got ---\n%s", want, out)
 		}

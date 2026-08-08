@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -59,8 +60,8 @@ func Setup(ctx context.Context, cfg Config) (shutdown func(context.Context) erro
 	shutdown = func(ctx context.Context) error {
 		var errs []error
 		// Iterate in reverse so flush ordering mirrors construction.
-		for i := len(shutdownFns) - 1; i >= 0; i-- {
-			if e := shutdownFns[i](ctx); e != nil {
+		for _, v := range slices.Backward(shutdownFns) {
+			if e := v(ctx); e != nil {
 				errs = append(errs, e)
 			}
 		}

@@ -52,8 +52,8 @@ var _ = Describe("QPUReconciler", func() {
 		qpu := &qccv1alpha1.QPU{
 			ObjectMeta: metav1.ObjectMeta{Name: "qpu-test-local"},
 			Spec: qccv1alpha1.QPUSpec{
-				Provider:    "local",
-				BackendName: "aer_simulator",
+				Provider:    providerLocal,
+				BackendName: backendAer,
 				Kind:        qccv1alpha1.BackendKindSimulator,
 				Qubits:      32,
 			},
@@ -171,7 +171,7 @@ var _ = Describe("QPUReconciler", func() {
 		qpu := &qccv1alpha1.QPU{
 			ObjectMeta: metav1.ObjectMeta{Name: "qpu-test-probe"},
 			Spec: qccv1alpha1.QPUSpec{
-				Provider: "local",
+				Provider: providerLocal,
 				// backendName omitted on purpose; derived from K8s
 				// name via dash→underscore → "qpu_test_probe".
 				Kind: qccv1alpha1.BackendKindSimulator,
@@ -213,8 +213,8 @@ var _ = Describe("QPUReconciler", func() {
 		qpu := &qccv1alpha1.QPU{
 			ObjectMeta: metav1.ObjectMeta{Name: "qpu-test-probe-fail"},
 			Spec: qccv1alpha1.QPUSpec{
-				Provider:    "local",
-				BackendName: "aer_simulator",
+				Provider:    providerLocal,
+				BackendName: backendAer,
 				Kind:        qccv1alpha1.BackendKindSimulator,
 				Qubits:      16, // user hint, falls through to EffectiveQubits
 			},
@@ -241,8 +241,8 @@ var _ = Describe("QPUReconciler", func() {
 		qpu := &qccv1alpha1.QPU{
 			ObjectMeta: metav1.ObjectMeta{Name: "qpu-test-idempotent"},
 			Spec: qccv1alpha1.QPUSpec{
-				Provider:    "local",
-				BackendName: "aer_simulator",
+				Provider:    providerLocal,
+				BackendName: backendAer,
 				Kind:        qccv1alpha1.BackendKindSimulator,
 				Qubits:      16,
 			},
