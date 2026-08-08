@@ -18,6 +18,9 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+# qcc-executor: separate Deployment + Service, kept out of ../manager so the
+# Helm plugin sees a single Deployment there.
+- ../executor
 # Default QPU registry — ships the in-process Aer simulator so a fresh
 # `make deploy` results in a working system.  Hardware QPUs are in
 # config/samples/ and require provider-side setup before applying.
