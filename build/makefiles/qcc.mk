@@ -16,7 +16,7 @@ tools-check: ## Verify the pinned toolchain is installed.
 
 # QCC paths that overlap the scaffold. Everything else QCC owns is invisible to
 # kubebuilder and the 3-way merge keeps it without help.
-KB_RESTORE := .github/workflows README.md
+KB_RESTORE := .github/workflows README.md  hack/boilerplate.go.txt
 
 KB_FROM_BRANCH   ?= $(shell git rev-parse --abbrev-ref HEAD)
 KB_UPDATE_FLAGS  ?=
