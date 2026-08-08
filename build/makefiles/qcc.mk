@@ -12,7 +12,22 @@ tools-check: ## Verify the pinned toolchain is installed.
 	@command -v go >/dev/null 2>&1 || { echo "missing tool: go — install Go (https://go.dev/dl/); go.mod's toolchain directive then fetches the exact version"; exit 1; }
 	@missing="$$(mise ls --missing 2>/dev/null)"; \
 	if [ -n "$$missing" ]; then echo "$$missing"; echo "run 'make tools-install'"; exit 1; fi
-	@echo "Toolchain matches .mise.toml."	
+	@echo "Toolchain matches .mise.toml."
+
+# QCC paths that overlap the scaffold. Everything else QCC owns is invisible to
+# kubebuilder and the 3-way merge keeps it without help.
+KB_RESTORE := .github/workflows README.md
+
+KB_FROM_BRANCH   ?= $(shell git rev-parse --abbrev-ref HEAD)
+KB_UPDATE_FLAGS  ?=
+
+# GOTOOLCHAIN=auto: the scaffold being generated may require a newer Go than
+# this project pins, and a pinned GOTOOLCHAIN forbids fetching it.
+.PHONY: kubebuilder-update
+kubebuilder-update: ## Pull kubebuilder scaffold changes onto a review branch.
+	GOTOOLCHAIN=auto kubebuilder alpha update $(KB_UPDATE_FLAGS) \
+		--from-branch $(KB_FROM_BRANCH) \
+		$(addprefix --restore-path ,$(KB_RESTORE))
 
 ##@ QCC CLI
 
