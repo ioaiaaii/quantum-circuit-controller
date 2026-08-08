@@ -6,7 +6,6 @@ cliVersion: 4.14.0
 domain: io
 layout:
 - go.kubebuilder.io/v4
-- grafana.kubebuilder.io/v1-alpha
 projectName: quantum-circuit-controller
 repo: github.com/ioaiaaii/quantum-circuit-controller
 resources:
@@ -17,6 +16,15 @@ resources:
   domain: io
   group: qcc
   kind: Circuit
+  path: github.com/ioaiaaii/quantum-circuit-controller/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: io
+  group: qcc
+  kind: QPU
   path: github.com/ioaiaaii/quantum-circuit-controller/api/v1alpha1
   version: v1alpha1
 version: "3"
