@@ -67,3 +67,6 @@ dist/
 # mise local overrides
 .mise.local.toml
 mise.local.toml
+
+# buildx metadata
+build/ci/*-metadata.json
