@@ -11,6 +11,7 @@ You may obtain a copy of the License at
 package commands
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,7 +19,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -333,7 +333,7 @@ func scheduleTimelineLines(s *executor.ScheduleResult) []string {
 	lines := make([]string, 0, len(qubits))
 	for _, q := range qubits {
 		ops := byQubit[q]
-		sort.SliceStable(ops, func(i, j int) bool { return ops[i].StartDt < ops[j].StartDt })
+		slices.SortStableFunc(ops, func(a, b executor.ScheduledOp) int { return cmp.Compare(a.StartDt, b.StartDt) })
 		events := make([]string, 0, len(ops))
 		for _, op := range ops {
 			events = append(events, formatTimelineEvent(op, s.DtSeconds))

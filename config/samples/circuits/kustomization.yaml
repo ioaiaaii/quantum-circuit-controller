@@ -1,0 +1,5 @@
+resources:
+- bell.yaml
+- bell-seeded.yaml
+- bell-select.yaml
+- bell-sabre.yaml

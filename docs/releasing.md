@@ -74,4 +74,3 @@ There is no image publishing, no signing, no provenance, and no release
 automation: the project sits at SLSA L0. The release pipeline, the gates
 it will run, and the supply-chain artifacts it will produce are tracked in
 [issues](https://github.com/ioaiaaii/quantum-circuit-controller/issues).
-The [implementation status](./status.md) records what ships today.

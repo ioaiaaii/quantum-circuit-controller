@@ -30,7 +30,7 @@ allocation. The five runs here use 1024 shots each for the first pass and
 A QPU enters the platform through a minimal manifest, provider and kind;
 everything else is discovered:
 
-<img alt="fake-fez QPU manifest: spec declares only provider local and kind simulator; every other field is left to the probe" src="./assets/figures/qpu_manifest_fake-fez.webp" width="700">
+<img alt="fake-fez QPU manifest: spec declares only provider local and kind simulator, every other field is left to the probe" src="./assets/figures/qpu_manifest_fake-fez.webp" width="700">
 
 After `kubectl apply -f fake-fez.yaml`, the controller probes the backend
 through the executor and populates `status` with the qubit count, basis
@@ -78,7 +78,7 @@ qcc run examples/thesis/algorithms/shor.py \
 
 The run completes in 510 ms after transpiling to depth 506. All 1024
 shots land on the two expected period bitstrings `0000` and `1000`
-(517 and 507); the difference is sampling variation.
+(517 and 507). The difference is sampling variation.
 
 The success metric used throughout is correct-period mass:
 
@@ -109,7 +109,7 @@ One `Circuit` per available simulator, all sharing the same source body
 and `qcc.io/experiment` label. A single labelled experiment, not
 unrelated runs:
 
-<img alt="Performance-test fan-out table: one row per simulator with phase, transpiled depth, gate counts, and top outcomes; fake-belem shows a terminal TranspilationFailed; the last line is a Grafana deep-link with the experiment filter" src="./assets/figures/circuit_run_shor_perf-test.webp" width="900">
+<img alt="Performance-test fan-out table: one row per simulator with phase, transpiled depth, gate counts, and top outcomes, fake-belem shows a terminal TranspilationFailed, the last line is a Grafana deep-link with the experiment filter" src="./assets/figures/circuit_run_shor_perf-test.webp" width="900">
 
 Capability mismatches are first-class
 results: the five-qubit `fake-belem` returns a terminal
@@ -237,7 +237,7 @@ spec:
 ```
 
 Both are submitted with `kubectl create -f` (the Tier-2 block is not
-typed in the CRD and has no CLI flag; see
+typed in the CRD and has no CLI flag. See
 `examples/thesis/circuits/shor-v2.yaml` and `shor-v3.yaml`).
 
 <img alt="v2 result card on ibm-kingston: optimizationLevel 3, depth 1523, outcomes 0000:540 and 1000:530 of 4096 shots, 26.1 percent correct-period mass" src="./assets/figures/circuit_get_shor_tuned_v2.webp" width="620">
@@ -261,7 +261,7 @@ noise floor, from 8.0% to 26.1%. The Tier-2 `alap` pass then inflates the
 gate count from 2054 to 2548 (inserted delays) and drops the modeled
 fidelity bound from 0.26 to 0.23, while the measured outcome stays within
 sampling noise at 26.9%. Both the empirical outcome and the modeled
-exposure are visible for every run on the same telemetry surface; the
+exposure are visible for every run on the same telemetry surface. The
 model-versus-measurement gap is itself legible.
 
 ## Cleaning up

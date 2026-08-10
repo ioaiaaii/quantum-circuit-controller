@@ -2,9 +2,7 @@
 
 How QCC is built and how to work on it, organized by engineering domain:
 build and test, packaging, release engineering, performance, security, and
-the QCC internals themselves. The SRE principles behind these choices are
-mapped in [SRE principles](./architecture.md#sre-principles-mapped); this
-document is the concrete practice.
+the QCC internals themselves.
 
 ## Repository map
 
@@ -23,88 +21,35 @@ proto/qcc/executor/v1/   the gRPC contract, single source of truth
 gen/proto/               generated Go stubs (committed)
 test/e2e/                end-to-end suite, build tag `e2e`
 config/                  kustomize tree: CRDs, RBAC, manager + executor, samples
-deploy/                  kind + observability platform values, Grafana dashboards
-build/                   Dockerfiles, CI configs, changelog templates
+deploy/                  kind + observability platform values, dashboards, Helm chart
+build/                   Dockerfiles, project makefiles, CI configs, repo-operator
 hack/                    developer scripts and boilerplate
 examples/thesis/         the Shor evaluation kit (algorithms, circuits, render.py)
 ```
 
 ## Build and test
 
-Go is pinned by the `toolchain` directive
-in `go.mod`; any recent Go auto-fetches it. Everything else (`kubectl`,
-`kind`, `helm`, `kustomize`, `kubebuilder`, `buf`, `golangci-lint`,
-`lychee`, `controller-gen`, `setup-envtest`, `python`, `uv`) is pinned in
-`.mise.toml` and provisioned by `make tools-install`. CI uses the same
-pins through `mise-action`, so local and CI toolchains cannot diverge.
-Python dependencies are locked in `uv.lock` and installed with
-`--frozen`, so the simulator results the evaluation rests on are not
-exposed to silent dependency drift.
-
-The everyday targets:
-
-```bash
-make build           # controller into dist/qcc-controller
-make qcc-build       # CLI into dist/qcc (version from git describe)
-make docker-build executor-build   # both images
-make test            # Go unit + envtest suites
-make executor-test   # Python: uv run pytest
-make lint            # custom golangci-lint;  make executor-lint runs ruff
-make docs-check      # link + anchor check over all markdown
-make test-e2e        # full deploy against a dedicated kind cluster
-```
-
-Generated code is committed. Protobuf stubs (`gen/proto/`,
-`qcc-executor/src/qcc_executor/proto/`) and controller-gen outputs (CRDs,
-RBAC, DeepCopy) live in the tree: contract changes appear in diffs, and
-consumers build without the generator toolchain. Never hand-edit
-generated files; regenerate with `make proto-generate` and
-`make manifests generate`.
-
-Linting is a build product of its own. Go uses a custom golangci-lint
-binary (built by `make lint-build` from `.custom-gcl.yml`) that bundles
-project plugins such as logcheck. Python is ruff-clean with generated
-code excluded.
-
-What the suites cover:
-
-- `internal/controller/` runs against envtest, a real kube-apiserver and
-  etcd: the reconcilers driven through the full phase machine with a fake
-  executor; selection semantics, artifact ownership, condition
-  transitions, and the terminal-versus-transient error split.
-- `qcc-executor/tests/` runs in-process gRPC round-trips with a real
-  `AerAdapter`: run, convert, draw, the async lifecycle, and Tier-2
-  passthrough reproducibility (seeded runs must produce identical
-  counts).
-- `test/e2e/` (build tag `e2e`) deploys the real images into an isolated
-  kind cluster: a manager-up and metrics-served smoke test.
-
-The tightest local loop runs the controller and executor as local
-processes:
-
-```bash
-make dev-up                                            # kind + platform + CRDs
-uv run --project qcc-executor python -m qcc_executor   # terminal 1: executor on :9000
-make run                                               # terminal 2: controller
-```
-
-The controller dials `127.0.0.1:9000` when `QCC_EXECUTOR_ADDR` is unset,
-which is exactly the local case. For an in-cluster loop, `make dist-up`
-rebuilds and redeploys both images.
+The toolchain, workflows, and test suites are in
+[development.md](./development.md). Two engineering decisions sit behind
+them. Generated code is committed, so contract changes appear in diffs
+and consumers build without the generator toolchain. Go linting uses a
+custom golangci-lint binary built from `.custom-gcl.yml`, bundling
+project plugins such as logcheck.
 
 ## Package
 
 The controller builds to `gcr.io/distroless/static:nonroot`:
-a static Go binary, no shell, no package manager. The executor is
-`python:3.12-slim` with a dedicated non-root user and a `uv`-built venv,
-dependency layer cached separately from source. Both deployments satisfy
-the restricted Pod Security Standard (non-root, no privilege escalation,
-capabilities dropped, seccomp RuntimeDefault).
+a static Go binary, no shell, no package manager. The executor builds to
+`gcr.io/distroless/python3-debian12` in two stages, with the `uv`-locked
+dependency layer cached separately from source, and runs as the nonroot
+user. Both deployments satisfy the restricted Pod Security Standard
+(non-root, no privilege escalation, capabilities dropped, seccomp
+RuntimeDefault).
 
 Kustomize composes the deployment: `config/default` gathers CRDs,
 RBAC, the controller, the executor, and the metrics Service under one
 name prefix, the kubebuilder-standard layout. Helm packaging and
-published images are roadmap items; today the install path is
+published images are roadmap items. Today the install path is
 build-and-load ([tutorial](./getting-started.md)).
 
 ## Release engineering
@@ -119,7 +64,7 @@ Commitlint configuration and the changelog templates live under
 The gRPC contract is guarded by `buf`:
 lint, format, and `make proto-breaking` against `main`, so the wire
 contract gets the same review discipline as the CRD schema. CRD changes
-stay additive within `v1alpha1`; any schema-only (unenforced) field is
+stay additive within `v1alpha1`. Any schema-only (unenforced) field is
 documented as such in [API reference](./api.md). To change either contract:
 
 ```bash
@@ -142,7 +87,7 @@ least-privilege permissions:
 | `proto.yml` | `buf lint` + format check |
 | `docs.yml` | `make docs-check` (markdown-triggered) |
 
-There is no image-publish or release workflow yet; images build locally.
+There is no image-publish or release workflow yet. Images build locally.
 GHCR publishing, vulnerability scanning, and release automation are
 roadmap items.
 
@@ -185,7 +130,7 @@ at build time, and CI runs with `permissions: contents: read`.
 
 The runtime posture, both the pod hardening and the single-tenant
 assumptions behind it, is in
-[security posture](./operations.md#security-posture). Vulnerability
+[security model](./operations.md#security-model). Vulnerability
 reporting goes through [SECURITY.md](../SECURITY.md).
 
 ## QCC internals
@@ -211,7 +156,7 @@ policy. Never collapse the two classes.
 ### Controller notes
 
 `Reconcile` handles one phase per pass. It switches on `status.phase`,
-and each handler does one thing, patches status, and requeues; a deferred
+and each handler does one thing, patches status, and requeues. A deferred
 hook records the transition metrics only when the phase actually changed.
 
 `qcc.io/run-index` is computed as max(siblings)+1 without a transaction,
@@ -251,7 +196,7 @@ fail a submission.
 
 The wire boundary fixes two type mismatches. Protobuf Struct numbers are
 double-only, so a `seed_transpiler: 7` written in YAML arrives as `7.0`
-and Qiskit rejects it; the servicer coerces whole-number floats back to
+and Qiskit rejects it. The servicer coerces whole-number floats back to
 integers while preserving bools. It also strips `shots` from the Tier-2
 `execute` block, leaving the Tier-1 field as the single source of truth.
 
@@ -304,17 +249,17 @@ class MyVendorAdapter(Adapter):
 2. Register it in `adapters/__init__.py`:
    `_ADAPTERS["myvendor"] = MyVendorAdapter`.
 3. Honor the error contract: constructor problems raise
-   `AdapterUnavailable`; `transpile` exceptions surface as
-   `TranspilationFailed`; `submit` and `fetch_result` exceptions as
+   `AdapterUnavailable`. `transpile` exceptions surface as
+   `TranspilationFailed`, and `submit` and `fetch_result` exceptions as
    `ProviderSubmissionFailed`. Report failures by raising, never by
    returning partial results.
 4. Forward, do not translate: the `options` dicts are the user's Tier-2
-   passthrough; hand them verbatim to your SDK. `shots` always wins over
+   passthrough. Hand them verbatim to your SDK. `shots` always wins over
    a `shots` key in options. If the vendor has a job-tag surface, stamp
    `qcc.circuit.uid:<circuit_uid>` best-effort.
 5. Register a `QPU` with `spec.provider: myvendor` and run the
    [demonstration flow](./demonstration.md) against it. `inspect()` fills
-   what it can and leaves the rest zero; the controller treats absence as
+   what it can and leaves the rest zero. The controller treats absence as
    "skip", never as "perfect".
 
 Three adapter categories fit this contract: Qiskit-provider wrappers
@@ -351,5 +296,5 @@ accepted with it.
 Operational consequences live in
 [known limitations](./operations.md#known-limitations). Code-level ones:
 `IBMAdapter.poll()` never returns `PENDING`, so the servicer's
-queue-position message path is currently unreachable; multi-register
+queue-position message path is currently unreachable, and multi-register
 circuits collapse to one register's counts.

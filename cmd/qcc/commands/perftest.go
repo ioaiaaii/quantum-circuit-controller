@@ -30,11 +30,12 @@ package commands
 // mapomatic) are collected under Ch9 "selection-chain extensions".
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -233,7 +234,7 @@ func listPerfTestQPUs(ctx context.Context, cli client.Client, includeHardware bo
 		}
 		out = append(out, q)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b qccv1alpha1.QPU) int { return cmp.Compare(a.Name, b.Name) })
 	return out, nil
 }
 
@@ -378,13 +379,14 @@ func topOutcomes(results map[string]int64, n int) string {
 	for b, c := range results {
 		pairs = append(pairs, kv{b, c})
 	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].count != pairs[j].count {
-			return pairs[i].count > pairs[j].count
+	slices.SortFunc(pairs, func(a, b kv) int {
+		// Descending by count: b before a.
+		if c := cmp.Compare(b.count, a.count); c != 0 {
+			return c
 		}
 		// Stable secondary sort by bitstring so identical-count
 		// outcomes don't shuffle between table renders.
-		return pairs[i].bitstring < pairs[j].bitstring
+		return cmp.Compare(a.bitstring, b.bitstring)
 	})
 	if len(pairs) > n {
 		pairs = pairs[:n]

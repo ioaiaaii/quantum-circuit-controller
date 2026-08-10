@@ -1,0 +1,8 @@
+resources:
+- executor.yaml
+images:
+- name: qcc-executor
+  newName: qcc-executor
+  newTag: test-ci
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

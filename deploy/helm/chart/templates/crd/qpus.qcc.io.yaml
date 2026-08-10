@@ -1,0 +1,417 @@
+{{- if .Values.crd.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: qpus.qcc.io
+spec:
+  group: qcc.io
+  names:
+    kind: QPU
+    listKind: QPUList
+    plural: qpus
+    singular: qpu
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .spec.kind
+      name: Kind
+      type: string
+    - jsonPath: .status.qubits
+      name: Qubits
+      type: integer
+    - jsonPath: .status.availability
+      name: Available
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          QPU is the Schema for the qpus API — a declarative backend profile that
+          the controller's selection chain treats as a candidate.  Cluster-scoped
+          because QPUs are infrastructure: one QPU resource per registered
+          backend, shared across all namespaces that submit Circuits.  See
+          QCC-API.md §4 for the contract and QCC-System-Design.md §6 for the
+          execution-architecture context.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: QPUSpec is the desired state of a QPU backend profile.
+            properties:
+              access:
+                description: |-
+                  access carries the credential reference for adapters that need one.
+                  Omit for provider=local.
+                properties:
+                  credentialSecretRef:
+                    description: |-
+                      credentialSecretRef points at the Kubernetes Secret holding provider
+                      credentials (e.g. IBM Quantum API token).  Optional and omitted for
+                      provider=local (Aer needs no credentials).
+                    properties:
+                      name:
+                        description: name is unique within a namespace to reference
+                          a secret resource.
+                        type: string
+                      namespace:
+                        description: namespace defines the space within which the
+                          secret name must be unique.
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
+              backendName:
+                description: |-
+                  backendName is the provider-native identifier (e.g. "aer_simulator",
+                  "ibm_sherbrooke") that the executor passes verbatim to the adapter.
+
+                  Optional: when omitted, the controller derives it from
+                  metadata.name by replacing dashes with underscores.  This means the
+                  common case where a QPU's K8s name and its vendor wire-name are the
+                  same string in two character sets (e.g. K8s `fake-brisbane` ↔
+                  Qiskit `fake_brisbane`) needs no manual mirroring.  Set this field
+                  explicitly when the K8s name diverges from the vendor identifier —
+                  for example multi-tenant deployments naming a resource
+                  `prod-ibm-sherbrooke` that still targets `ibm_sherbrooke`.
+                  Use `QPU.EffectiveBackendName()` to read the resolved value.
+                type: string
+              capabilities:
+                description: |-
+                  capabilities expresses static-ish backend properties that affect
+                  selection eligibility beyond integer hard constraints.
+                properties:
+                  maxShots:
+                    description: |-
+                      maxShots caps the per-job shot count the backend accepts.  Selection
+                      rejects Circuits whose spec.shots exceeds this when set.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                type: object
+              kind:
+                description: |-
+                  kind discriminates real-hardware backends from simulators.  Used by
+                  BackendSelector to filter and by observability to label spans.
+                enum:
+                - hardware
+                - simulator
+                type: string
+              provider:
+                description: |-
+                  provider names the adapter that handles this QPU on the executor
+                  side (see QCC-API.md §4.4 for the full mapping):
+                    - "local"  → AerAdapter (in-process simulator, no credentials)
+                    - "ibm"    → IBMAdapter (qiskit-ibm-runtime; shipped M3)
+                  Alternative substrates (QRMI, CUDA-Q) are Ch9 future-work; see
+                  QCC-Design-State.md §7d (QEI direction).
+                minLength: 1
+                type: string
+              qubits:
+                description: |-
+                  qubits is the user-asserted qubit count, treated as a *hint* rather
+                  than authoritative.  The QPUReconciler probes the backend (via the
+                  Executor's ProbeBackend RPC) and stamps the observed value onto
+                  status.qubits — selection reads status.qubits when present and
+                  falls back to spec.qubits only when the probe hasn't run.  Use
+                  QPU.EffectiveQubits() to read the resolved value.
+                format: int32
+                minimum: 1
+                type: integer
+              region:
+                description: |-
+                  region is an optional locality / provider-region hint forwarded to
+                  the adapter (e.g. for IBM Cloud regional routing).  Selection does
+                  not filter on region in M1.
+                type: string
+            required:
+            - kind
+            - provider
+            type: object
+          status:
+            description: QPUStatus is the observed state of a QPU.
+            properties:
+              availability:
+                description: |-
+                  availability is the rolling health verdict the selection chain
+                  reads.  For local QPUs the QPU reconciler stamps Available on
+                  registration; for hardware QPUs (M2) it transitions Unknown →
+                  Available/Unavailable based on provider probes.
+                enum:
+                - Available
+                - Unavailable
+                - Unknown
+                type: string
+              basisGates:
+                description: |-
+                  basisGates is the native gate set the backend supports, as
+                  reported by its Target.  Read by Move-3 (transpile per backend)
+                  in M2; surfaced by `qcc get qpu` in M1.5b for visibility.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              coherenceMedians:
+                description: |-
+                  coherenceMedians carries median T1 (energy-relaxation) and T2
+                  (dephasing) lifetimes in microseconds.  Sets the coherence
+                  budget the executor's transpilation must live within and feeds
+                  Move 5's freshness/quality weight in M2 (T1 / gate_duration =
+                  circuits-worth-of-time).  Zero values mean the backend doesn't
+                  report coherence data (generic Aer).
+                properties:
+                  t1Micros:
+                    description: |-
+                      t1Micros is the median T1 (energy-relaxation) lifetime across
+                      qubits, in microseconds.  Upper bound on how long a circuit can
+                      run before the |1⟩ population decays to |0⟩.
+                    type: number
+                  t2Micros:
+                    description: |-
+                      t2Micros is the median T2 (dephasing) lifetime across qubits,
+                      in microseconds.  Always ≤ T1 by physics.
+                    type: number
+                required:
+                - t1Micros
+                - t2Micros
+                type: object
+              conditions:
+                description: |-
+                  conditions communicates fine-grained state.  Standard list-map
+                  shape so kubectl describe renders them well.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              couplingEdges:
+                description: |-
+                  couplingEdges is the number of physical 2-qubit edges in the
+                  backend's coupling map.  Zero means all-to-all (typical for
+                  generic Aer); a positive value means the backend has explicit
+                  topology constraints that Move-4 (layout) will respect.
+                format: int32
+                minimum: 0
+                type: integer
+              dtSeconds:
+                description: |-
+                  dtSeconds is the backend's control-electronics cycle period —
+                  the smallest time quantum the AWG can address.  All gate
+                  durations are integer multiples of dt.  Typical IBM: ~2.22e-10 s.
+                  Zero when the backend doesn't expose dt (generic Aer).  Paired
+                  with instructionDurationMedians for circuit-time estimation.
+                type: number
+              errorMedians:
+                description: |-
+                  errorMedians summarises gate/readout error rates from the
+                  backend's Target.  Each value is a population median in [0, 1];
+                  zero means "not reported by this backend" — scoring (M2) treats
+                  absence as skip, never as perfect.
+                properties:
+                  readout:
+                    description: readout is the median readout (measure-instruction)
+                      error, in [0, 1].
+                    type: number
+                  singleQubit:
+                    description: |-
+                      singleQubit is the median single-qubit gate error rate (excluding
+                      measure), in [0, 1].
+                    type: number
+                  twoQubit:
+                    description: twoQubit is the median two-qubit gate error rate,
+                      in [0, 1].
+                    type: number
+                required:
+                - readout
+                - singleQubit
+                - twoQubit
+                type: object
+              instructionDurationMedians:
+                description: |-
+                  instructionDurationMedians carries median per-instruction
+                  durations in seconds (single-qubit gates excluding measure;
+                  two-qubit gates).  Together with circuit depth they estimate
+                  total execution time — depth × max(1Q, 2Q duration) is a
+                  critical-path lower bound that Move 5 will compare to T1/T2
+                  for coherence-budget scoring in M2.
+                properties:
+                  singleQubitSeconds:
+                    description: |-
+                      singleQubitSeconds is the median duration of single-qubit gates
+                      (excluding measurement).  In seconds.
+                    type: number
+                  twoQubitSeconds:
+                    description: |-
+                      twoQubitSeconds is the median duration of two-qubit gates.
+                      In seconds.  Typically the largest gate-duration contributor.
+                    type: number
+                required:
+                - singleQubitSeconds
+                - twoQubitSeconds
+                type: object
+              lastCalibrationTime:
+                description: |-
+                  lastCalibrationTime is the wall-clock instant at which the most
+                  recent calibration snapshot was taken from the provider.  For
+                  fake_* simulators this is the frozen snapshot date (typically
+                  months old); for live hardware it's the most recent vendor refresh.
+                  Empty for plain Aer (no calibration concept).  Used by Move 5
+                  (scoring) as the freshness weight.
+                format: date-time
+                type: string
+              lastError:
+                description: |-
+                  lastError carries the most recent reconciliation/probe failure for
+                  debugging.  Populated by M2 hardware probes; M1 leaves it nil.
+                properties:
+                  message:
+                    description: message is a human-readable explanation.
+                    type: string
+                  reason:
+                    description: reason is a short machine-readable token (see Reason*
+                      constants).
+                    type: string
+                  time:
+                    description: time the error was last observed.
+                    format: date-time
+                    type: string
+                required:
+                - message
+                - reason
+                - time
+                type: object
+              observedGeneration:
+                description: observedGeneration tracks reconciliation correctness.
+                format: int64
+                type: integer
+              processor:
+                description: |-
+                  processor identifies the chip generation behind the backend
+                  (e.g. {Family: "Eagle", Revision: "3"} for fake_brisbane).
+                  Populated from Qiskit's backend.processor_type at probe time.
+                  Nil when the backend has no processor_type metadata (generic
+                  Aer).  Surfaced so the CLI can label runs by hardware family
+                  and the thesis can cite Eagle/Heron/Falcon from system data.
+                properties:
+                  family:
+                    description: |-
+                      family names the chip generation, e.g. "Eagle", "Heron",
+                      "Falcon".  Always present when the parent QPUProcessor is set.
+                    type: string
+                  revision:
+                    description: |-
+                      revision is the within-family iteration as a string, e.g. "3"
+                      for Eagle r3.  Empty when the backend reports no revision.
+                    type: string
+                  segment:
+                    description: |-
+                      segment is a sub-divider used by some families (Falcon's "T"
+                      segment, for example).  Empty when not applicable.
+                    type: string
+                required:
+                - family
+                type: object
+              qubits:
+                description: |-
+                  qubits is the authoritative qubit count discovered by the
+                  Executor's ProbeBackend RPC.  When present, the Circuit
+                  reconciler's Move-1 filter reads this instead of spec.qubits.
+                  Zero when the probe has not yet run; selection falls back to
+                  spec.qubits then.
+                format: int32
+                minimum: 0
+                type: integer
+              queueDepth:
+                description: |-
+                  queueDepth is the provider-reported number of jobs ahead in the
+                  backend's queue, when available.  Populated by M2 probes.
+                format: int32
+                minimum: 0
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

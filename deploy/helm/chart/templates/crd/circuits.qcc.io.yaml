@@ -1,0 +1,373 @@
+{{- if .Values.crd.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: circuits.qcc.io
+spec:
+  group: qcc.io
+  names:
+    kind: Circuit
+    listKind: CircuitList
+    plural: circuits
+    singular: circuit
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .status.selectedQPU
+      name: QPU
+      type: string
+    - jsonPath: .spec.source.format
+      name: Format
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Circuit is the Schema for the circuits API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CircuitSpec is the desired state of a Circuit.
+            properties:
+              backendSelector:
+                description: BackendSelector expresses constraints and preferences
+                  for QPU selection.
+                properties:
+                  allowedQPURefs:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  backendName:
+                    description: |-
+                      backendName names a specific backend.  Matches against either the
+                      QPU's metadata.name (DNS-1123, kubectl-friendly, e.g. "fake-brisbane")
+                      *or* its spec.backendName (provider-native, e.g. "fake_brisbane").
+                      The dual match exists because Kubernetes names cannot contain
+                      underscores but Qiskit identifiers often do, so users naturally
+                      refer to QPUs by whichever form they last saw.
+                    type: string
+                  kind:
+                    description: BackendKind discriminates QPU profile types.
+                    enum:
+                    - hardware
+                    - simulator
+                    type: string
+                  minQubits:
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  provider:
+                    description: |-
+                      provider filters candidate QPUs by spec.provider (e.g. "local",
+                      "ibm"); see QCC-API.md §4.4 for the dispatch table.  Alternative
+                      substrates (QRMI for Pasqal/multi-vendor, CUDA-Q for NVIDIA) are
+                      Ch9 future-work — no adapter wired today.
+                    type: string
+                  region:
+                    type: string
+                type: object
+              execute:
+                description: |-
+                  execute — see Transpile above.  Forwarded to the adapter's submit
+                  stage (e.g. SamplerV2.run / AerSimulator.run).  shots is a Tier-1
+                  field and must NOT appear here.
+                x-kubernetes-preserve-unknown-fields: true
+              mode:
+                default: run
+                description: 'mode names the verb to apply to source: run | select
+                  | draw.'
+                enum:
+                - run
+                - select
+                - draw
+                - schedule
+                type: string
+              optimizationLevel:
+                format: int32
+                maximum: 3
+                minimum: 0
+                type: integer
+              shots:
+                description: |-
+                  shots is the number of circuit executions.  Required for mode=run;
+                  ignored for mode=draw and mode=select.
+                format: int32
+                minimum: 1
+                type: integer
+              source:
+                description: source carries the circuit body in one of the supported
+                  formats.
+                properties:
+                  body:
+                    description: body is the raw source text in the chosen format.
+                    minLength: 1
+                    type: string
+                  format:
+                    description: SourceFormat names how to interpret CircuitSource.body.
+                    enum:
+                    - openqasm3
+                    - qiskit
+                    type: string
+                required:
+                - body
+                - format
+                type: object
+              timeoutSeconds:
+                format: int32
+                minimum: 1
+                type: integer
+              transpile:
+                description: |-
+                  transpile and execute carry per-stage *passthrough* configuration
+                  (Composition Principle Tier 2 — QCC-Design-State.md §7a).  Each is
+                  an opaque dict whose keys/values flow through the controller and
+                  executor untouched and land verbatim as keyword arguments on the
+                  upstream Qiskit call site: `transpile` → qiskit.compiler.transpile(),
+                  `execute` → the adapter's submit path (SamplerV2.run for IBM,
+                  AerSimulator.run for Aer).
+
+                  Keys MUST use snake_case to match Qiskit's parameter names
+                  directly (e.g. seed_transpiler, layout_method, routing_method for
+                  transpile; seed_simulator, memory for execute).  No translation
+                  happens — unknown keys propagate to Qiskit's own validation and
+                  surface as Circuit FAILED with the adapter-supplied error_reason.
+
+                  Tier-1 fields (shots, optimizationLevel) take precedence; setting
+                  them via passthrough is a configuration smell.  The CRD uses
+                  `x-kubernetes-preserve-unknown-fields: true` (set via the
+                  `+kubebuilder:pruning:PreserveUnknownFields` marker) so arbitrary
+                  keys survive a kubectl apply round-trip.
+                x-kubernetes-preserve-unknown-fields: true
+            required:
+            - mode
+            - source
+            type: object
+          status:
+            description: CircuitStatus is the observed state of a Circuit.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              convertedRef:
+                description: |-
+                  convertedRef points at a ConfigMap holding the OpenQASM 3 form of a
+                  qiskit-format source, under data["qasm"].  Populated by mode=run with
+                  source.format=qiskit as a byproduct of the controller calling
+                  Executor.ConvertSource before submission.  Null for OpenQASM 3
+                  sources (nothing to convert) and for modes that do not invoke
+                  ConvertSource.
+                properties:
+                  name:
+                    description: |-
+                      name of the ConfigMap.  Always lives in the same namespace as the
+                      Circuit.
+                    type: string
+                required:
+                - name
+                type: object
+              drawingRef:
+                description: |-
+                  drawingRef points at a ConfigMap holding the ASCII rendering produced
+                  for mode=draw, under data["drawing"].
+                properties:
+                  name:
+                    description: |-
+                      name of the ConfigMap.  Always lives in the same namespace as the
+                      Circuit.
+                    type: string
+                required:
+                - name
+                type: object
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                description: CircuitPhase is the user-facing lifecycle phase. See
+                  QCC-API.md §5.1.
+                enum:
+                - Pending
+                - Selecting
+                - Transpiling
+                - Submitting
+                - Running
+                - Rendering
+                - Scheduling
+                - Succeeded
+                - Failed
+                type: string
+              providerJobId:
+                type: string
+              results:
+                additionalProperties:
+                  format: int64
+                  type: integer
+                description: |-
+                  results holds measurement counts when the Circuit is run inline (mode=run).
+                  Keys are classical-bitstring outcomes; values are observed counts.
+                type: object
+              scheduleRef:
+                description: |-
+                  scheduleRef points at a ConfigMap holding the JSON-encoded
+                  per-instruction timeline for mode=schedule, under
+                  data["schedule.json"].  Times are in dt cycles; the ConfigMap
+                  also carries dt_seconds, total_duration_dt, num_qubits, and
+                  backend_used so the renderer can convert without an additional
+                  QPU lookup.
+                properties:
+                  name:
+                    description: |-
+                      name of the ConfigMap.  Always lives in the same namespace as the
+                      Circuit.
+                    type: string
+                required:
+                - name
+                type: object
+              selectedQPU:
+                type: string
+              selectionSummary:
+                description: SelectionSummary is a compact explanation of the executor's
+                  selection decision.
+                properties:
+                  candidates:
+                    format: int32
+                    type: integer
+                  score:
+                    type: string
+                  selected:
+                    type: string
+                type: object
+              traceId:
+                type: string
+              transpile:
+                description: |-
+                  transpile carries the post-transpilation gate-shape metrics
+                  reported by the executor (depth, two-qubit gate count, total
+                  gate count).  Populated by mode=run; null for mode=draw and
+                  mode=select (no submission, no transpile metrics).
+                properties:
+                  depth:
+                    description: |-
+                      depth is the longest path of dependent gates in the transpiled
+                      circuit — the coherence-time exposure proxy.
+                    format: int32
+                    type: integer
+                  totalGates:
+                    description: |-
+                      totalGates is the post-transpile gate count across all arities
+                      (single + two-qubit + measurement + reset etc.).
+                    format: int32
+                    type: integer
+                  twoQubitGates:
+                    description: |-
+                      twoQubitGates counts ECR / CZ / CX-equivalent two-qubit gates
+                      after transpile.  The single most predictive number for total
+                      circuit error on real hardware.
+                    format: int32
+                    type: integer
+                type: object
+              usageSeconds:
+                description: |-
+                  usageSeconds is the substrate-reported billable compute time for
+                  the Circuit's execution (Qiskit Runtime `Job.usage()` for IBM
+                  hardware), in seconds.  Distinct from wall-clock duration:
+                  usageSeconds measures only on-QPU compute, not queue wait or
+                  transit.  Zero or omitted for simulator paths (Aer / fake_*) and
+                  for runs where the substrate didn't expose a usage handle —
+                  observability code emits the corresponding metric only when this
+                  value is > 0.  See QCC-Observability.md §5.2.
+                type: number
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

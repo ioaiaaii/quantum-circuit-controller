@@ -28,9 +28,10 @@ import (
 	"github.com/ioaiaaii/quantum-circuit-controller/internal/executor"
 )
 
-// ptrBool returns a pointer to b — needed because OwnerReference.Controller
-// is a *bool and Gomega's Equal compares pointers structurally.
-func ptrBool(b bool) *bool { return &b }
+// backendAer is the Aer simulator's provider-native backend name, used across
+// the controller tests. The provider itself is providerLocal, in
+// qpu_controller.go.
+const backendAer = "aer_simulator"
 
 const bellQASM = `OPENQASM 3.0;
 include "stdgates.inc";
@@ -202,7 +203,7 @@ var _ = Describe("CircuitReconciler", func() {
 
 	bellResult := &executor.Result{
 		TaskID:        "aer-test-task",
-		BackendUsed:   "aer_simulator",
+		BackendUsed:   backendAer,
 		Counts:        map[string]int64{"00": 510, "11": 490},
 		Depth:         2,
 		TwoQubitGates: 1,
@@ -232,8 +233,8 @@ var _ = Describe("CircuitReconciler", func() {
 		qpu := &qccv1alpha1.QPU{
 			ObjectMeta: metav1.ObjectMeta{Name: localAerQPUName},
 			Spec: qccv1alpha1.QPUSpec{
-				Provider:    "local",
-				BackendName: "aer_simulator",
+				Provider:    providerLocal,
+				BackendName: backendAer,
 				Kind:        qccv1alpha1.BackendKindSimulator,
 				Qubits:      32,
 			},
@@ -329,7 +330,7 @@ var _ = Describe("CircuitReconciler", func() {
 		// Circuit is deleted; assert the controller wired it correctly.
 		Expect(cm.OwnerReferences).To(HaveLen(1))
 		Expect(cm.OwnerReferences[0].UID).To(Equal(final.UID))
-		Expect(cm.OwnerReferences[0].Controller).To(Equal(ptrBool(true)))
+		Expect(cm.OwnerReferences[0].Controller).To(Equal(new(true)))
 
 		Expect(fake.drawCall).To(Equal(1))
 		Expect(fake.calls).To(Equal(0), "draw mode must not call RunCircuit")
@@ -396,7 +397,7 @@ var _ = Describe("CircuitReconciler", func() {
 		Expect(cm.Data).To(HaveKeyWithValue("qasm", convertedQASM))
 		Expect(cm.OwnerReferences).To(HaveLen(1))
 		Expect(cm.OwnerReferences[0].UID).To(Equal(final.UID))
-		Expect(cm.OwnerReferences[0].Controller).To(Equal(ptrBool(true)))
+		Expect(cm.OwnerReferences[0].Controller).To(Equal(new(true)))
 	})
 
 	It("fails with NoEligibleBackend when no QPU is Available", func() {
@@ -426,7 +427,7 @@ var _ = Describe("CircuitReconciler", func() {
 		qpu := &qccv1alpha1.QPU{
 			ObjectMeta: metav1.ObjectMeta{Name: "fake-osaka"},
 			Spec: qccv1alpha1.QPUSpec{
-				Provider: "local",
+				Provider: providerLocal,
 				// BackendName intentionally omitted.
 				Kind:   qccv1alpha1.BackendKindSimulator,
 				Qubits: 127,
@@ -462,7 +463,7 @@ var _ = Describe("CircuitReconciler", func() {
 		qpu := &qccv1alpha1.QPU{
 			ObjectMeta: metav1.ObjectMeta{Name: "fake-brisbane"},
 			Spec: qccv1alpha1.QPUSpec{
-				Provider:    "local",
+				Provider:    providerLocal,
 				BackendName: "fake_brisbane",
 				Kind:        qccv1alpha1.BackendKindSimulator,
 				Qubits:      127,

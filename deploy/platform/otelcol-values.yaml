@@ -2,7 +2,7 @@
 # Chart: https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector
 #
 # Pipelines:
-#   traces  : OTLP in -> batch -> Tempo (and debug for sanity-check via kubectl logs)
+#   traces  : OTLP in -> batch -> debug only (no tracing backend; the tracer is a stub)
 #   metrics : OTLP in -> batch -> Prometheus exporter on :8889 (scraped by Prom via ServiceMonitor)
 #
 # Image: contrib distribution (gives us k8sattributes/spanmetrics/etc. when we want them later)
@@ -34,10 +34,6 @@ config:
   processors:
     batch: {}
   exporters:
-    otlp/tempo:
-      endpoint: tempo.monitoring.svc.cluster.local:4317
-      tls:
-        insecure: true
     prometheus:
       endpoint: 0.0.0.0:8889
     debug:
@@ -47,7 +43,7 @@ config:
       traces:
         receivers: [otlp]
         processors: [batch]
-        exporters: [otlp/tempo, debug]
+        exporters: [debug]
       metrics:
         receivers: [otlp]
         processors: [batch]

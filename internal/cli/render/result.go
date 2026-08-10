@@ -12,7 +12,7 @@ package render
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -116,7 +116,7 @@ func Histogram(counts map[string]int64) string {
 			maxCount = v
 		}
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	// Pad outcome labels to a consistent width.
 	keyWidth := 0

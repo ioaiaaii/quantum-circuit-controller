@@ -8,7 +8,7 @@ established in classical systems.
 The design turns on one separation. The component that orchestrates work,
 the controller, and the component that talks to quantum providers, the
 executor, are kept apart and joined only by a typed gRPC contract. A user
-states intent; the platform carries it across the quantum-classical
+states intent. The platform carries it across the quantum-classical
 boundary and reports back through Kubernetes-native state and standard
 telemetry.
 
@@ -83,7 +83,7 @@ threads through `SubmitTask`, `WatchTask`, and `FetchTaskResult`, the same
 lifecycle as a Qiskit `JobV1`.
 
 Every call stands alone. The request carries the source, the chosen
-backend, and the correlation identifier; the response carries a result or
+backend, and the correlation identifier. The response carries a result or
 a job handle. The full RPC table is in the
 [API reference](./api.md#the-executor-grpc-contract).
 
@@ -148,7 +148,7 @@ The shipped selector applies hard constraints only. A QPU is eligible when
 the requested shots, and it matches the selector on provider, backend
 name, kind, and minimum qubits. The controller takes the first eligible
 candidate, and a Circuit with no qualifying candidate fails with
-`NoEligibleBackend`. The selector ranks nothing; it filters and picks.
+`NoEligibleBackend`. The selector ranks nothing. It filters and picks.
 Scoring strategies would extend the same surface and consume the metrics
 the lifecycle already exposes.
 
@@ -193,22 +193,6 @@ the sum, and the same card makes the omission visible: the 139 µs
 critical-path estimate is already comparable to the backend's T2 of
 117 µs, so coherence decay is a real error source the gate-only number
 does not capture.
-
-## SRE principles, mapped
-
-The thesis claim is SRE discipline applied to quantum execution. Where
-each principle lands:
-
-| Principle | Where it lives in QCC |
-|---|---|
-| Declarative desired state, reconciliation | Circuit and QPU custom resources; the phase machine converges observed toward declared |
-| Error budgets | the error-exposure indicator and its bands, a budget verdict per run from measured backend data |
-| Idempotency and safe retries | phase persisted before the external side effect; the UID and generation idempotency key; the terminal-versus-transient error rule |
-| Observability as a first-class surface | the fourteen-metric specification; the USE-Q substrate dashboard and the RED-style circuit dashboard |
-| Toil reduction | backend probing, label stamping, artifact garbage collection, and the performance-test fan-out are automation rather than runbook steps |
-| Least privilege, small blast radius | scoped RBAC, restricted Pod Security Standard, vendor code confined to the executor |
-| Graceful degradation | probe failures do not block availability, and the platform runs without the observability stack |
-| Capacity discipline | metric cardinality budgeted per label, through allowlist promotion and a flagged 2^q dimension |
 
 ## How the requirements are met
 
@@ -277,7 +261,7 @@ fourteen-metric specification in the
 [metrics reference](./observability.md#metric-specification) is a worked
 proposal for what one would need: backend quality as gauges, lifecycle as
 counters and histograms, an info-metric join key, and a cross-boundary
-identifier label. The names are QCC's; the shape is the contribution.
+identifier label. The names are QCC's. The shape is the contribution.
 
 Both are candidacies rather than standards. An interface argument needs a
 reference implementation others can run, extend, and disagree with.
@@ -289,7 +273,7 @@ probes are one-shot. Selection is O(registered QPUs) per circuit,
 negligible at registry scale, and the read path scales because metrics
 observe from informer caches rather than the API server. The binding
 constraint is the executor, whose process-local task registry caps it at
-one replica; [scaling and sizing](./operations.md#scaling-and-sizing)
+one replica. See [scaling and sizing](./operations.md#scaling-and-sizing)
 covers that and the memory envelope.
 
 A durable task registry unlocks horizontal executor scaling, hardware

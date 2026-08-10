@@ -1,49 +1,17 @@
-# Toolchain pinning for the Quantum Circuit Controller.
-# `mise install` provisions everything below.  CI uses jdx/mise-action.
-#
-# Go is intentionally NOT managed here — go.mod's `toolchain` directive owns
-# the Go version (kubebuilder convention).  Any Go on PATH that supports
-# GOTOOLCHAIN=auto will auto-fetch the pinned toolchain on first invocation.
-
+# Toolchain pinning for the Quantum Circuit Controller, that kubebuilder does not provide.
 [tools]
-# Language runtimes (Go is owned by go.mod, see note above).
-# Every version here is pinned: a floating pin means today's green CI can
-# turn red tomorrow with no commit in between, which makes a failure
-# impossible to attribute.  Bump deliberately, in a commit.
 python = "3.12"
-uv = "0.11.13"
-
-# Kubernetes operator development
-kubectl = "1.31.4"
-kind = "0.27.0"
-helm = "3.16.4"
-kustomize = "5.8.1"
-kubebuilder = "4.14.0"
-
-# Linters & gRPC toolchain
-"golangci-lint" = "2.11.4"
-buf = "1.50.0"
-
-# Docs link checker (offline mode gates relative links + anchors in CI)
-"aqua:lycheeverse/lychee" = "0.24.2"
-
-# Terminal recorder for the README demo.  Needs ttyd and ffmpeg on PATH,
-# which mise does not provide; install those with the system package
-# manager.  Recording is a manual step, never part of CI.
-"aqua:charmbracelet/vhs" = "0.11.0"
-
-# Kubebuilder/controller-runtime Go tools (installed via the Go backend so
-# they track the same versions referenced by the project's go.mod).
-# setup-envtest publishes no tag on the 0.23 line that matches this
-# project's controller-runtime v0.23.3, so it is pinned to the immutable
-# pseudo-version the `release-0.23` branch resolved to rather than to the
-# branch itself, which moves.
-"go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "v0.20.1"
-"go:sigs.k8s.io/controller-runtime/tools/setup-envtest" = "v0.0.0-20260305142021-f9589b9f2b9d"
-
-[env]
-# Keep envtest binaries in a stable, mise-friendly cache location.
-KUBEBUILDER_ASSETS_DIR = "{{ env.HOME }}/.cache/kubebuilder-envtest"
+uv = "0.12"
+# macOS ships 3.81, where .SHELLFLAGS is silently ignored
+make = "4.4"
+jq = "1.8"
+kubectl = "1.36"
+kind = "0.32"
+helm = "3.21"
+kubebuilder = "4.15"
+buf = "1.50"
+"aqua:lycheeverse/lychee" = "0.24"
+"aqua:charmbracelet/vhs" = "0.11"
 
 [settings]
 experimental = true

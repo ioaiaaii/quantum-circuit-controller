@@ -41,6 +41,4 @@ adapters are registered today, `AerAdapter` for the `local` provider and
 IBM credentials come from executor environment variables rather than from
 `QPU.spec.access.credentialSecretRef`. Async task handles live in memory,
 so hardware jobs do not survive an executor restart. The executor exports
-no OpenTelemetry metrics or traces yet. The
-[implementation status](../docs/status.md) tracks
-all three.
+no OpenTelemetry metrics or traces yet.
