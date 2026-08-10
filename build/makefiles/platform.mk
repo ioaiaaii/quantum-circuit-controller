@@ -3,21 +3,21 @@
 
 ##@ Local Dev Platform (kind + observability stack)
 
-DEV_CLUSTER ?= qcc-dev
+# One environment per branch, like the image tags. IMAGE_TAG is the
+# DNS-safe form of the branch or tag.
+DEV_CLUSTER ?= qcc-dev-$(IMAGE_TAG)
 DEV_NS      ?= monitoring
 
 .PHONY: platform-up
-platform-up: ## Bring up the kind cluster + observability stack (kps + Tempo + OTel Collector)
+platform-up: ## Bring up the kind cluster + observability stack (kps + OTel Collector)
 	@if ! kind get clusters 2>/dev/null | grep -qx "$(DEV_CLUSTER)"; then \
-		kind create cluster --config deploy/platform/kind-config.yaml; \
+		kind create cluster --name "$(DEV_CLUSTER)" --config deploy/platform/kind-config.yaml; \
 	fi
 	@helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
-	@helm repo add grafana              https://grafana.github.io/helm-charts              2>/dev/null || true
 	@helm repo add open-telemetry       https://open-telemetry.github.io/opentelemetry-helm-charts 2>/dev/null || true
-	@helm repo update prometheus-community grafana open-telemetry
+	@helm repo update prometheus-community open-telemetry
 	@kubectl get ns $(DEV_NS) >/dev/null 2>&1 || kubectl create ns $(DEV_NS)
 	helm upgrade --install kps     prometheus-community/kube-prometheus-stack -n $(DEV_NS) -f deploy/platform/kps-values.yaml     --wait
-	helm upgrade --install tempo   grafana/tempo                              -n $(DEV_NS) -f deploy/platform/tempo-values.yaml   --wait
 	helm upgrade --install otelcol open-telemetry/opentelemetry-collector     -n $(DEV_NS) -f deploy/platform/otelcol-values.yaml --wait
 	@echo ""
 	@echo "Platform up. Useful next steps:"
@@ -27,7 +27,6 @@ platform-up: ## Bring up the kind cluster + observability stack (kps + Tempo + O
 .PHONY: platform-down
 platform-down: ## Tear down the platform stack and the kind cluster
 	-helm uninstall otelcol -n $(DEV_NS)
-	-helm uninstall tempo   -n $(DEV_NS)
 	-helm uninstall kps     -n $(DEV_NS)
 	-kind delete cluster --name $(DEV_CLUSTER)
 
@@ -64,13 +63,17 @@ dev-up: platform-up install ## Bring up dev platform + install CRDs.
 dev-down: platform-down ## Tear down the dev platform.
 
 .PHONY: dist-up
-dist-up: images-build images-load install deploy ## Build both images, load into kind, install CRDs, deploy controller+executor.
+dist-up: images-build images-load install deploy ## Build both images, load into kind, deploy; safe to re-run to pick up changes.
+	@# Images rebuild under the same tag, so apply alone does not roll the pods.
+	@kubectl -n quantum-circuit-controller-system rollout restart deployment
+	@kubectl -n quantum-circuit-controller-system rollout status deployment --timeout=180s
 	@echo ""
 	@echo "QCC deployed to $(DEV_CLUSTER). Inspect with:"
 	@echo "  kubectl get pods -n quantum-circuit-controller-system"
 	@echo "  kubectl get circuits"
 	@echo "Apply a sample:"
-	@echo "  kubectl apply -f config/samples/qcc_v1alpha1_circuit.yaml"
+	@echo "  kubectl apply -k config/samples/qpu/local/   # register simulators first"
+	@echo "  kubectl apply -f config/samples/circuits/bell.yaml"
 
 .PHONY: dist-down
 dist-down: undeploy uninstall ## Remove deployment and CRDs from the kind cluster.

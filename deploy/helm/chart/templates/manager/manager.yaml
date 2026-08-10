@@ -4,22 +4,22 @@ metadata:
   labels:
     app.kubernetes.io/component: executor
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
+    app.kubernetes.io/name: {{ include "qcc.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-  name: {{ include "quantum-circuit-controller.resourceName" (dict "suffix" "executor" "context" $) }}
+  name: {{ include "qcc.resourceName" (dict "suffix" "executor-app" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/component: executor
-      app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
+      app.kubernetes.io/name: {{ include "qcc.name" . }}
   template:
     metadata:
       labels:
         app.kubernetes.io/component: executor
-        app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
+        app.kubernetes.io/name: {{ include "qcc.name" . }}
         helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}

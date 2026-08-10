@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: qcc-controller
   newName: qcc-controller
-  newTag: latest
+  newTag: test-ci

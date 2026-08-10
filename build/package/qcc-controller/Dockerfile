@@ -8,7 +8,7 @@ ARG BASE_IMAGE=gcr.io/distroless/static:nonroot
 ARG BASE_DIGEST=sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6
 
 # golang:1.25.7, matching go.mod
-FROM golang@sha256:5a79b94c34c299ac0361fbb7c7fca6dc552e166b42341050323fa3ab137d7be9 AS builder
+FROM golang@sha256:2005724102f45917a63e9d092fc0e4ea56ea575048ce147caad5f5f61502c365 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH

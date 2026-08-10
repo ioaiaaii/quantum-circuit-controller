@@ -18,13 +18,7 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
-# qcc-executor: separate Deployment + Service, kept out of ../manager so the
-# Helm plugin sees a single Deployment there.
 - ../executor
-# Default QPU registry — ships the in-process Aer simulator so a fresh
-# `make deploy` results in a working system.  Hardware QPUs are in
-# config/samples/ and require provider-side setup before applying.
-- ../qpu
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 #- ../webhook
@@ -48,9 +42,7 @@ resources:
 # Uncomment the patches line if you enable Metrics
 patches:
 # [METRICS] The following patch will enable the metrics endpoint using HTTPS and the port :8443.
-# Targets the controller-manager Deployment specifically; the executor
-# Deployment doesn't run a metrics server and would error on the args[0]
-# insertion.
+# Name-targeted: the executor Deployment has no metrics server.
 - path: manager_metrics_patch.yaml
   target:
     kind: Deployment

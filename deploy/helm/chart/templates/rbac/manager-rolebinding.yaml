@@ -10,10 +10,10 @@ metadata:
 {{- end }}
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
+    app.kubernetes.io/name: {{ include "qcc.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-  name: {{ include "quantum-circuit-controller.resourceName" (dict "suffix" "manager-rolebinding" "context" $) }}
+  name: {{ include "qcc.resourceName" (dict "suffix" "manager-rolebinding" "context" $) }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   {{- if .Values.rbac.namespaced }}
@@ -21,8 +21,8 @@ roleRef:
   {{- else }}
   kind: ClusterRole
   {{- end }}
-  name: {{ include "quantum-circuit-controller.resourceName" (dict "suffix" "manager-role" "context" $) }}
+  name: {{ include "qcc.resourceName" (dict "suffix" "manager-role" "context" $) }}
 subjects:
 - kind: ServiceAccount
-  name: {{ include "quantum-circuit-controller.serviceAccountName" . }}
+  name: {{ include "qcc.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}

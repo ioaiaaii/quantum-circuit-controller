@@ -20,7 +20,7 @@ spec:
   region: us-east
   access:
     credentialSecretRef:
-      name: ibm-quantum-credentials
+      name: ibm-quantum-token
       namespace: quantum-circuit-controller-system
   capabilities:
     maxShots: 10000

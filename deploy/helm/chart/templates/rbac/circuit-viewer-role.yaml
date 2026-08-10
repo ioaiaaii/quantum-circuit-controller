@@ -11,10 +11,10 @@ metadata:
 {{- end }}
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
+    app.kubernetes.io/name: {{ include "qcc.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-  name: {{ include "quantum-circuit-controller.resourceName" (dict "suffix" "circuit-viewer-role" "context" $) }}
+  name: {{ include "qcc.resourceName" (dict "suffix" "circuit-viewer-role" "context" $) }}
 rules:
 - apiGroups:
   - qcc.io

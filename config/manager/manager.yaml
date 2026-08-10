@@ -65,30 +65,14 @@ spec:
           - --health-probe-bind-address=:8081
         image: qcc-controller:latest
         imagePullPolicy: IfNotPresent
-        name: qcc-controller
-        # QCC_EXECUTOR_ADDR points the gRPC client at the executor Service.
-        # The literal name below is what kustomize emits after applying the
-        # `quantum-circuit-controller-` namePrefix to the bare "executor"
-        # Service in executor.yaml.
-        #
-        # OTEL_* configures the OpenTelemetry SDK (see
-        # `internal/observability/config.go` and
-        # `docs/systems-design/QCC-Observability.md` §12.6).  The
-        # endpoint targets the helm-deployed Collector in the
-        # `monitoring` namespace; the downward-API env vars
-        # populate semconv K8s resource attributes so every metric
-        # carries pod / namespace / node identity.
+        name: manager
         env:
+          # Executor Service name after the kustomize namePrefix.
           - name: QCC_EXECUTOR_ADDR
             value: quantum-circuit-controller-executor:9000
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: otelcol-opentelemetry-collector.monitoring.svc.cluster.local:4317
-          # OTLP-gRPC over cluster pod network — TLS termination is not
-          # appropriate here; the exporter would otherwise default to
-          # TLS and fail to handshake with the Collector's plain-text
-          # OTLP receiver.  In-cluster Collector endpoints are insecure
-          # by convention.  Belt-and-braces: code also sets
-          # otlpmetricgrpc.WithInsecure() in metrics/provider.go.
+          # In-cluster Collector receives plain-text OTLP.
           - name: OTEL_EXPORTER_OTLP_INSECURE
             value: "true"
           - name: OTEL_SERVICE_NAME

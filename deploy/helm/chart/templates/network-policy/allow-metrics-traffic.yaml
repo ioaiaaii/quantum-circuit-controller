@@ -4,14 +4,14 @@ kind: NetworkPolicy
 metadata:
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
-  name: {{ include "quantum-circuit-controller.resourceName" (dict "suffix" "allow-metrics-traffic" "context" $) }}
+    app.kubernetes.io/name: {{ include "qcc.name" . }}
+  name: {{ include "qcc.resourceName" (dict "suffix" "allow-metrics-traffic" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
   podSelector:
     matchLabels:
       control-plane: controller-manager
-      app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
+      app.kubernetes.io/name: {{ include "qcc.name" . }}
   policyTypes:
     - Ingress
   ingress:

@@ -993,6 +993,77 @@ rules:
   - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: quantum-circuit-controller
+  name: quantum-circuit-controller-qpu-admin-role
+rules:
+- apiGroups:
+  - qcc.io
+  resources:
+  - qpus
+  verbs:
+  - '*'
+- apiGroups:
+  - qcc.io
+  resources:
+  - qpus/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: quantum-circuit-controller
+  name: quantum-circuit-controller-qpu-editor-role
+rules:
+- apiGroups:
+  - qcc.io
+  resources:
+  - qpus
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - qcc.io
+  resources:
+  - qpus/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: quantum-circuit-controller
+  name: quantum-circuit-controller-qpu-viewer-role
+rules:
+- apiGroups:
+  - qcc.io
+  resources:
+  - qpus
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - qcc.io
+  resources:
+  - qpus/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   labels:
@@ -1131,7 +1202,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
-        image: qcc-controller:tmp-merge-08-08-26-22-03
+        image: qcc-controller:chore-ci-fixes
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
@@ -1139,7 +1210,7 @@ spec:
             port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
-        name: qcc-controller
+        name: manager
         ports:
         - containerPort: 8081
           name: health
@@ -1211,7 +1282,7 @@ spec:
               key: QISKIT_IBM_CHANNEL
               name: ibm-quantum-token
               optional: true
-        image: qcc-executor:latest
+        image: qcc-executor:chore-ci-fixes
         imagePullPolicy: IfNotPresent
         livenessProbe:
           initialDelaySeconds: 15

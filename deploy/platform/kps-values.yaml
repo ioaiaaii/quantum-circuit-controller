@@ -6,7 +6,6 @@
 #   - Prometheus retention dropped to 24h (dev, no archival)
 #   - Prometheus watches ALL ServiceMonitors regardless of release label
 #     (so OTel Collector and QCC controller's ServiceMonitors are picked up)
-#   - Tempo pre-wired as a Grafana datasource
 
 alertmanager:
   enabled: false
@@ -45,15 +44,6 @@ grafana:
   service:
     type: ClusterIP
   defaultDashboardsEnabled: false
-  additionalDataSources:
-    - name: Tempo
-      type: tempo
-      access: proxy
-      url: http://tempo.monitoring.svc.cluster.local:3100
-      uid: tempo
-      jsonData:
-        tracesToMetrics:
-          datasourceUid: prometheus
   resources:
     requests:
       cpu: 100m

@@ -4,7 +4,7 @@ kind: ServiceAccount
 metadata:
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "quantum-circuit-controller.name" . }}
+    app.kubernetes.io/name: {{ include "qcc.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     {{- with .Values.serviceAccount.labels }}
@@ -16,6 +16,6 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  name: {{ include "quantum-circuit-controller.serviceAccountName" . }}
+  name: {{ include "qcc.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
 {{- end }}
