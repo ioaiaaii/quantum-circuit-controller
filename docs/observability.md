@@ -3,7 +3,7 @@
 QCC's principal contribution is its observability surface: a metrics
 specification built entirely on cloud-native open standards, plus a query
 convention that lets ordinary PromQL answer cross-substrate questions
-without distributed tracing. This page is the reference; the dashboards in
+without distributed tracing. This page is the reference. The dashboards in
 action, with screenshots, are in
 [demonstration](./demonstration.md#read-the-dashboards).
 
@@ -18,7 +18,7 @@ action, with screenshots, are in
 | Which IBM job is this Circuit, and vice versa? | `status.providerJobId` and the `qcc.circuit.uid` job tag |
 | Why did an RPC or adapter call fail? | controller and executor logs |
 
-Per-resource truth lives on the resources; the metrics exist for the
+Per-resource truth lives on the resources. The metrics exist for the
 aggregate view, many Circuits and QPUs at once.
 
 ## Telemetry pipeline
@@ -41,7 +41,7 @@ flowchart LR
 Emitting OTLP rather than a backend-specific format keeps the application
 independent of the metrics store: switching stores is Collector
 configuration, not a QCC change. The executor emits no telemetry of its
-own today; its work is visible through controller status, metrics, and
+own today. Its work is visible through controller status, metrics, and
 logs.
 
 The reconcile hot path stays cheap and the series count stays bounded
@@ -62,7 +62,7 @@ circuit).
 ### QPU metrics
 
 All six are observable gauges populated from `QPU.status`. Every series
-carries the `qpu` identity label; `QPU` is cluster-scoped, so there is no
+carries the `qpu` identity label. `QPU` is cluster-scoped, so there is no
 `namespace` label.
 
 | Metric | Additional dimensions |
@@ -86,11 +86,11 @@ about, each a median across the device's qubits or pairs:
   `Target` reports no measurement duration, so `readout` is absent from
   the duration metric rather than zero.
 - `t1` and `t2`: energy relaxation and dephasing. The CRD stores
-  microseconds (IBM's published unit); the metric converts to seconds to
+  microseconds (IBM's published unit). The metric converts to seconds to
   honor its `_seconds` suffix.
 
 `qcc_qpu_info` is the info-metric anchor (value always 1, identity in
-labels); other QPU metrics join to it with `group_left`.
+labels). Other QPU metrics join to it with `group_left`.
 `qcc_qpu_condition` follows the kube-state-metrics Conditions idiom: one
 row per `(qpu, condition, status)`, exactly one of which is 1.
 
@@ -112,14 +112,14 @@ All series carry `circuit`, `namespace`, and `uid` as identity labels.
 Dimension semantics:
 
 - `kind`: post-transpile gate counts in the backend's native set.
-  `two_qubit` is the count that drives fidelity; `single_qubit` is
+  `two_qubit` is the count that drives fidelity. `single_qubit` is
   derived as total minus two_qubit.
 - `phase`: one of `Pending`, `Selecting`, `Submitting`, `Running`, from
   the `status.conditions` timestamps. `Submitting` spans transpilation
   and submission together, which the conditions vocabulary does not
   separate.
 - `bitstring`: a measured outcome (`0000`), valued by shot count. The raw
-  measurement histogram and the input to any fidelity analysis; it adds
+  measurement histogram and the input to any fidelity analysis. It adds
   2^q series for a q-qubit readout, fine at small-circuit scale and
   budgeted, revisit beyond.
 
@@ -189,7 +189,7 @@ sum by (reason) (increase(qcc_circuits_total{phase="Failed"}[24h]))
 
 Both dashboards ship as source-controlled ConfigMaps under
 [`../deploy/grafana/`](../deploy/grafana/) (label `grafana_dashboard: "1"`,
-picked up by the kube-prometheus-stack sidecar; install with
+picked up by the kube-prometheus-stack sidecar. Install with
 `kubectl apply -f deploy/grafana/`):
 
 - QCC · QPU substrate health (USE-Q): fleet view of availability,
@@ -228,6 +228,4 @@ the logs keep the stack trace.
 
 Distributed tracing has its provider wired but exports no spans,
 executor-side telemetry is not instrumented, and Kubernetes Events are not
-emitted. All three are deferred rather than ruled out, and the
-[implementation status](./status.md) records them alongside the rest of
-the design.
+emitted. All three are deferred rather than ruled out.

@@ -10,7 +10,7 @@ The shipped deployment path is kustomize:
 
 ```bash
 make deploy IMG=<controller-image>       # kustomize build config/default | kubectl apply
-kubectl apply -k config/samples/qpu/     # register backends; deploy ships none
+kubectl apply -k config/samples/qpu/local/   # register simulators; deploy ships none
 ```
 
 `config/default` composes the CRDs, RBAC, the controller Deployment, the
@@ -18,11 +18,11 @@ executor Deployment and Service, and the metrics Service, all under the
 `quantum-circuit-controller-` name prefix in the
 `quantum-circuit-controller-system` namespace.
 
-No QPUs are installed by default. The operator-defaults directory,
-`config/qpu/`, is intentionally empty, so every backend is an explicit
-registration from `config/samples/qpu/` or from your own manifests. Until
-one QPU reports `Available`, a `mode=run` Circuit fails with
-`NoEligibleBackend`.
+No QPUs are installed by default. Every backend is an explicit registration.
+`config/samples/qpu/local/` covers the credential-free simulators, and
+`config/samples/qpu/ibm/` holds hardware profiles that require the
+`ibm-quantum-token` Secret. Until one QPU reports `Available`, a `mode=run`
+Circuit fails with `NoEligibleBackend`.
 
 The observability stack is deployed separately. `make platform-up` manages
 the kind cluster and the monitoring namespace for local development. On a
@@ -66,7 +66,7 @@ the `qcc_*` metrics do not use it).
 
 Credentials are executor-level environment, not per-QPU. The
 `QPU.spec.access.credentialSecretRef` field exists on the schema but is
-not consumed by the runtime; one token serves all `provider: ibm` QPUs.
+not consumed by the runtime. One token serves all `provider: ibm` QPUs.
 
 ```bash
 kubectl create secret generic ibm-quantum-token \
@@ -78,11 +78,11 @@ kubectl rollout restart deployment/quantum-circuit-controller-executor \
 ```
 
 The Secret is referenced with `optional: true`, so clusters without it
-start cleanly; the `IBMAdapter` then refuses construction and
+start cleanly. The `IBMAdapter` then refuses construction and
 IBM-targeted Circuits fail with `NoEligibleBackend` while Aer-backed
 Circuits are unaffected.
 
-## Security posture
+## Security model
 
 QCC v1.0.x assumes a single-tenant, trusted cluster. Four properties
 follow from that assumption and matter before deploying anywhere shared.
@@ -99,7 +99,7 @@ in-cluster network reach to port 9000 can submit work. Mutual TLS is
 future work, and until it lands NetworkPolicy is the available control.
 
 One IBM token serves the whole cluster, mounted into the executor from a
-Secret. Per-QPU and per-tenant credential isolation is not implemented;
+Secret. Per-QPU and per-tenant credential isolation is not implemented.
 `credentialSecretRef` exists on the schema only.
 
 The pods are hardened even though the boundary is not. Both deployments
@@ -117,10 +117,10 @@ Run exactly one executor replica. The async task registry (task ID to job
 handle) lives in executor process memory. With more than one replica
 behind the Service, `SubmitTask` can land on one pod and the follow-up
 `WatchTask` or `FetchTaskResult` on another, which returns `TaskNotFound`
-for a job that is actually running. Scale vertically instead; horizontal
+for a job that is actually running. Scale vertically instead. Horizontal
 scaling needs the durable registry listed under future work.
 
-The controller runs a single replica with leader election on; additional
+The controller runs a single replica with leader election on. Additional
 replicas are safe standbys.
 
 The controller is light, with shipped requests of `10m` CPU and `64Mi`
@@ -136,7 +136,7 @@ CPU.
 
 The controller serves `/healthz` and `/readyz` over HTTP on port 8081,
 both wired to Kubernetes probes. The executor is checked with TCP-socket
-probes on port 9000; a gRPC health-checking service is planned, so an open
+probes on port 9000. A gRPC health-checking service is planned, so an open
 port is the strongest liveness signal available today.
 
 ## Upgrades
@@ -149,7 +149,7 @@ port is the strongest liveness signal available today.
 
 ## Troubleshooting
 
-Work down this list; each step names the surface that answers it. The
+Work down this list. Each step names the surface that answers it. The
 metric and status semantics behind these surfaces are in
 [metrics reference](./observability.md).
 
@@ -169,7 +169,7 @@ metric and status semantics behind these surfaces are in
   either the QPU's Kubernetes name (`fake-brisbane`) or its
   provider-native name (`fake_brisbane`).
 - `spec.shots` above the QPU's `capabilities.maxShots` also rejects it.
-- `allowedQPURefs` and `region` do not narrow selection; both are
+- `allowedQPURefs` and `region` do not narrow selection. Both are
   schema-only fields.
 
 ### A Circuit fails with `TranspilationFailed` or `InvalidCircuit`
@@ -177,7 +177,7 @@ metric and status semantics behind these surfaces are in
 - The condition message carries the Qiskit error verbatim:
   `kubectl get circuit <name> -o jsonpath='{.status.conditions}'`
 - Typical causes: the circuit needs more qubits than the backend has
-  (`fake-belem` is 5-qubit); a Tier-2 passthrough key Qiskit rejects.
+  (`fake-belem` is 5-qubit), or a Tier-2 passthrough key Qiskit rejects.
 
 ### An IBM submission fails
 
@@ -192,7 +192,7 @@ metric and status semantics behind these surfaces are in
 ### A queued hardware run disappeared after an executor restart
 
 Known limitation, not a field-fixable bug: the task registry is
-in-memory. The vendor job itself is still running; find it in the IBM
+in-memory. The vendor job itself is still running. Find it in the IBM
 console via the `qcc.circuit.uid:<uid>` job tag. The Circuit will not
 converge, so delete it and resubmit, or record the counts manually from
 the console.
@@ -200,12 +200,12 @@ the console.
 ### Metrics are missing in Prometheus
 
 - Is the Collector reachable from the controller?
-  (`OTEL_EXPORTER_OTLP_ENDPOINT`; controller logs show export errors.)
+  (`OTEL_EXPORTER_OTLP_ENDPOINT`, and controller logs show export errors.)
 - Is Prometheus scraping the Collector? The kps values set
   `serviceMonitorSelectorNilUsesHelmValues: false` so the Collector's
   ServiceMonitor is picked up regardless of release labels.
 - Gauges are observed from the controller's informer cache on each
-  export cycle (30 s); a metric can lag a status change by up to one
+  export cycle (30 s), so a metric can lag a status change by up to one
   cycle.
 
 ## Known limitations
@@ -224,9 +224,13 @@ planned work rather than a permanent property.
    [scaling and sizing](#scaling-and-sizing).
 4. IBM availability is optimistic, so a failed probe leaves the QPU
    selectable.
-5. One credential serves the cluster; the per-QPU `credentialSecretRef`
+5. One credential serves the cluster. The per-QPU `credentialSecretRef`
    is not yet wired to the runtime.
 6. Kubernetes Events are not emitted, so lifecycle detail lives in
    `status.conditions` and the logs.
 7. Calibration is read at registration, so live-hardware values age
    between probes until TTL-based re-probing lands.
+8. Backend selection filters and picks the first match. Calibration-aware
+   scoring exists in the design only.
+9. The `BackendSelector` fields `allowedQPURefs` and `region` are
+   schema-only and not enforced.

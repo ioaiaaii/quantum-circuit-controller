@@ -49,7 +49,7 @@ qcc draw <file> [--keep] [--timeout 60s] [--poll 250ms]
 Transpiles and schedules the circuit against a backend's Target, then
 prints a per-qubit timeline in wall-clock units showing gate starts,
 durations, and the critical path. The backend must report instruction
-durations, so use a `fake_*` snapshot or real hardware; generic Aer fails
+durations, so use a `fake_*` snapshot or real hardware. Generic Aer fails
 with `SchedulingUnsupported`.
 
 ```bash

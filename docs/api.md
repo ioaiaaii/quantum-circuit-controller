@@ -17,13 +17,13 @@ tables below say so. Treat those rows as reserved contract surface.
 | `QPU.spec` | user / manifest | declared backend identity |
 | `QPU.status` | controller | probed backend facts and availability |
 
-The executor influences status through the controller; it never writes
+The executor influences status through the controller. It never writes
 Kubernetes objects itself.
 
 ## The two-tier schema
 
 Vendor SDKs change faster than a CRD schema can. Modeling every Qiskit
-parameter would force a schema version per new transpiler flag; modeling
+parameter would force a schema version per new transpiler flag. Modeling
 too few would wall off the SDK's surface. QCC resolves this with two
 tiers:
 
@@ -33,7 +33,7 @@ tiers:
   `qubits`, `access`, `capabilities`, `region`. Under a dozen per
   resource, slow-moving, exposed as CLI flags.
 - Tier 2: two open passthrough blocks on Circuit. The keys of
-  `spec.transpile` become kwargs to Qiskit's `transpile()`; the keys of
+  `spec.transpile` become kwargs to Qiskit's `transpile()`. The keys of
   `spec.execute` become kwargs to the backend's run call
   (`AerSimulator.run()` or `SamplerV2.run()`). Keys are snake_case,
   forwarded verbatim, uninterpreted. `shots` is Tier-1 and is stripped
@@ -41,7 +41,7 @@ tiers:
 
 When a vendor SDK gains a parameter, users can set it as soon as the new
 SDK ships in the executor image. No CRD bump, no controller rebuild. The
-cost: no API-server validation of Tier-2 keys; a bad key surfaces as a
+cost: no API-server validation of Tier-2 keys. A bad key surfaces as a
 terminal failure carrying Qiskit's own error message.
 
 ## Circuit
@@ -246,18 +246,18 @@ reads.
 Conditions: `Ready` (reason `ProviderProbeOK`) is always present.
 `MetadataFresh` appears only where freshness is meaningful. Local
 providers carry it permanently `True`, since a frozen snapshot cannot go
-stale; IBM hardware does not carry it, since calibration drifts over
+stale. IBM hardware does not carry it, since calibration drifts over
 hours and freshness reads from `lastCalibrationTime` instead.
 
-Availability today: `local` becomes `Available`; `ibm` becomes
-`Available` optimistically (a failed probe does not remove it); unknown
+Availability today: `local` becomes `Available`, `ibm` becomes
+`Available` optimistically (a failed probe does not remove it), and unknown
 providers stay `Unknown`, which selection rejects.
 
 ## The executor gRPC contract
 
 The controller-executor seam is `qcc.executor.v1`
 ([`proto/qcc/executor/v1/executor.proto`](../proto/qcc/executor/v1/executor.proto),
-the single source of truth; the tables here summarize it). Eight RPCs in
+the single source of truth, and the tables here summarize it). Eight RPCs in
 three families:
 
 | RPC | Family | Request (essentials) | Response (essentials) |
@@ -282,8 +282,8 @@ provider failures are reported in-band, as `status=FAILED` plus an
 `error_reason` that is a Circuit condition reason and an `error_message`.
 `SubmitTask` is the one exception: it uses gRPC status codes with the
 reason encoded as `Reason: message` in the status details.
-Transport-level errors mean "transient, retry"; in-band failures mean
-"terminal, record on the Circuit". Clients must preserve that split; the
+Transport-level errors mean "transient, retry". In-band failures mean
+"terminal, record on the Circuit". Clients must preserve that split. The
 controller's whole retry story rests on it
 ([the one error rule](./engineering.md#the-one-error-rule)).
 
@@ -301,14 +301,14 @@ controller's whole retry story rests on it
 
 The CLI never needs network reach to the executor or a provider. The
 plaintext gRPC and OTLP hops are an explicit single-tenant, in-cluster
-assumption; read the [security posture](./operations.md#security-posture)
+assumption. Read the [security model](./operations.md#security-model)
 before changing that topology.
 
 ## Behavioral notes
 
 - Qiskit input: `source.format: qiskit` bodies are executed server-side
   in an isolated module namespace and the first `QuantumCircuit` is
-  extracted (prefer a top-level variable named `circuit`); the converted
+  extracted (prefer a top-level variable named `circuit`). The converted
   OpenQASM 3 is persisted as the `convertedRef` artifact.
 - Backend-name matching: a selector's `backendName` matches either the
   QPU's Kubernetes name (`fake-brisbane`) or its provider-native name

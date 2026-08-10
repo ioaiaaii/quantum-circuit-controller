@@ -17,7 +17,6 @@
 
 QCC is a Kubernetes operator for hybrid quantum-classical execution. Quantum circuits and backends (QPUs) are modeled as custom resources. QCC registers and monitors QPU resources, and manages the orchestration of Circuit execution along with its observability instrumentation.
 
-
 <img alt="Terminal session: kubectl get qpu listing simulators and IBM hardware with calibration, qcc get qpu on a real backend, the Shor circuit drawn, an execution on a fake-brisbane snapshot, a detached submission to ibm-kingston, and the result card with transpiled shape, error-exposure verdict, and measured outcomes" src="./docs/assets/figures/qcc-demo.gif" width="864">
 
 ## Motivation
@@ -42,53 +41,24 @@ QCC applies cloud-native and SRE dicipline to provive the following features:
 - Circuits take configuration in two tiers: the options QCC owns and
   validates (tier-1), and a passthrough tier (tier-2) for anything else the backend SDK accepts.
 
-## Quickstart
+## Getting Started
 
-Requires a container runtime, Go, and [mise](https://mise.jdx.dev/). The
-local path runs on a laptop with kind:
+Start with the [Getting Started Kit](./docs/getting-started.md) to deploy QCC, run circuit and to get familiar with the system. Then check the [demonstration](./docs/demonstration.md) for the whole platform exercised on simulators and on real IBM hardware.
 
-```bash
-make tools-install                    # pinned toolchain (kubectl, kind, helm, uv, ...)
-make platform-up                      # kind cluster + Prometheus/Grafana/OTel
-kubectl apply -f deploy/grafana/      # QCC dashboards
-make dist-up                          # build images, load into kind, deploy QCC
-kubectl apply -k config/samples/qpu/  # register simulators + IBM profiles
-make qcc-build
-./dist/qcc run examples/bell-state.qasm --backend aer-statevector
-```
+Further readings:
 
-Full walkthrough, including real IBM hardware:
-[getting-started](./docs/getting-started.md).
-
-## Documentation
-
-Start with the [tutorial](./docs/getting-started.md) to stand QCC up and
-run a circuit, then the [demonstration](./docs/demonstration.md) for the
-whole platform exercised on simulators and on real IBM hardware.
-
-- [Architecture](./docs/architecture.md) covers the design, and where QCC
-  sits relative to QCSC, Qubernetes, Qonductor, and QRMI.
+- [Architecture](./docs/architecture.md) covers the design and the QCC reference relative to QCSC, and QRMI.
 - [API](./docs/api.md), [CLI](./docs/cli.md), and
   [metrics](./docs/observability.md) are the reference surfaces.
 - [Operations](./docs/operations.md) covers deployment and troubleshooting,
   [engineering](./docs/engineering.md) covers the code and its internals,
   and [releasing](./docs/releasing.md) covers the branching model and the
   release runbook.
-- [Implementation status](./docs/status.md) documents the implemented
-  subset of the design, subsystem by subsystem.
-
-## Status
-
-Working proof of concept. The three public interfaces, `qcc.io/v1alpha1`,
-the executor gRPC contract, and the metrics specification, are stable
-within the `v1.x` line but carry no compatibility promise yet.
 
 ## Contributing
 
 Contributions are welcome. Planned work is tracked in
-[GitHub Projects](https://github.com/ioaiaaii/quantum-circuit-controller/projects),
-and [CONTRIBUTING.md](./CONTRIBUTING.md) covers the setup, the conventions,
-and the review process.
+[GitHub Projects](https://github.com/ioaiaaii/quantum-circuit-controller/projects), and [CONTRIBUTING.md](./CONTRIBUTING.md) covers the internals, the conventions, and the review process.
 
 ## Citation
 

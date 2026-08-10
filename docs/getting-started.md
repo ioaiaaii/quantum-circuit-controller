@@ -6,14 +6,14 @@ step tells you what to expect before you move on.
 
 ## Before you begin
 
-- A container runtime. Docker, or a Docker-compatible engine such as
-  [Colima](https://github.com/abiosoft/colima) or Podman exposing the
-  Docker socket. `CONTAINER_TOOL` defaults to `docker`.
-- Go. The version is pinned in `go.mod`, and any recent Go on your `PATH`
-  fetches the right toolchain for you.
-- [mise](https://mise.jdx.dev/), which installs the rest of the toolchain,
-  including `kubectl`, `kind`, `helm`, and `kustomize`. See `.mise.toml`
-  for the full set.
+### Requirements
+
+| Requirement | Pinned in | Provided by |
+|---|---|---|
+| A container runtime: Docker, or a compatible engine such as [Colima](https://github.com/abiosoft/colima) or Podman | not pinned | your system; `CONTAINER_TOOL` defaults to `docker` |
+| Go | `go.mod` (`toolchain` directive) | any recent Go on `PATH` fetches the pinned version |
+| kubectl, kind, helm, kubebuilder, buf, python, uv, jq, make, lychee, vhs | `.mise.toml` | `make tools-install` |
+| kustomize, controller-gen, setup-envtest, golangci-lint | `Makefile` | installed into `./bin` on first use |
 
 Install the toolchain and check it:
 
@@ -22,15 +22,16 @@ make tools-install
 make tools-check
 ```
 
-Exact versions live in `.mise.toml`, `go.mod`, and `uv.lock`. CI installs
-from the same files, so a local run matches what CI and the published
-evaluation ran on.
+Python dependencies are locked in `uv.lock`. CI installs from the same
+files, so a local run matches what CI and the published evaluation ran
+on.
 
 ## Bring up the platform
 
-The platform target creates a kind cluster named `qcc-dev` and installs
-kube-prometheus-stack, Tempo, and the OpenTelemetry Collector into the
-`monitoring` namespace. Apply the dashboards afterwards:
+The platform target creates a kind cluster named `qcc-dev-<branch>`,
+one per branch, and installs kube-prometheus-stack and the OpenTelemetry
+Collector into the `monitoring` namespace. Apply the dashboards
+afterwards:
 
 ```bash
 make platform-up
@@ -60,7 +61,7 @@ running:
 kubectl get pods -n quantum-circuit-controller-system
 ```
 
-If a pod does not reach `Running`, check its logs and events; the
+If a pod does not reach `Running`, check its logs and events. The
 [troubleshooting section](./operations.md#troubleshooting) covers the
 common causes.
 
@@ -76,17 +77,16 @@ and eight `fake_*` snapshots that replay frozen calibration data from real
 IBM devices, so they reproduce a device's basis gates, coupling map, and
 noise without touching it.
 
-Real hardware (`spec.kind: hardware`) is `ibm-fez`, `ibm-kingston`, and
-`ibm-marrakesh`, each pointing at a live IBM Heron r2 device through
-`spec.backendName`. These need an IBM Quantum account, and submitting to
-one without credentials fails at the executor. Registering them now is
-still useful, because it puts them in the registry ready for the
-[hardware section](#run-on-real-ibm-hardware) below.
+Real hardware (`spec.kind: hardware`) profiles live in
+`config/samples/qpu/ibm/`: `ibm-fez`, `ibm-kingston`, `ibm-marrakesh`,
+and `ibm-sherbrooke`, each pointing at a live IBM device through
+`spec.backendName`. These need an IBM Quantum account and are registered
+in the [hardware section](#run-on-real-ibm-hardware) below.
 
-Apply the bundle:
+Register the simulators:
 
 ```bash
-kubectl apply -k config/samples/qpu/
+kubectl apply -k config/samples/qpu/local/
 ```
 
 The controller probes each backend through the executor as it is
@@ -176,9 +176,14 @@ kubectl rollout restart deployment/quantum-circuit-controller-executor \
   -n quantum-circuit-controller-system
 ```
 
-The sample IBM QPUs (`ibm-fez`, `ibm-kingston`, `ibm-marrakesh`) are
-already registered. Hardware queues take minutes to hours, so submit with
-`--detach` and come back later:
+Register the hardware profiles:
+
+```bash
+kubectl apply -k config/samples/qpu/ibm/
+```
+
+Hardware queues take minutes to hours, so submit with `--detach` and
+come back later:
 
 ```bash
 ./dist/qcc run examples/thesis/algorithms/shor.py --backend ibm-fez --detach

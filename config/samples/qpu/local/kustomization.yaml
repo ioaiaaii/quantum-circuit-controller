@@ -1,0 +1,10 @@
+resources:
+- aer-statevector.yaml
+- fake-belem.yaml
+- fake-brisbane.yaml
+- fake-fez.yaml
+- fake-kyoto.yaml
+- fake-marrakesh.yaml
+- fake-osaka.yaml
+- fake-sherbrooke.yaml
+- fake-torino.yaml
