@@ -78,10 +78,14 @@ the environment. Grafana:
 | Python unit | `make executor-test` | adapters, qiskit_io, in-process gRPC round-trips with a real AerAdapter |
 | End to end | `make test-e2e` | both images on a throwaway kind cluster, independent of the dev cluster |
 
+`make verify` checks the toolchain, then runs every lint and every
+test suite, the e2e cycle included. It is the full CI surface in one
+command, so expect the kind cluster round to take several minutes.
+
 ## Before opening a PR
 
 ```bash
-make check   # every lint and test across the stack
+make verify   # every lint and test across the stack, e2e included
 ```
 
 If you changed the API or the gRPC contract, regenerate and commit the
@@ -92,3 +96,25 @@ make manifests generate   # api/v1alpha1/ -> CRDs, RBAC, DeepCopy
 make generate-all         # proto/ -> Go and Python stubs
 make proto-breaking       # contract changes must stay backward compatible
 ```
+
+## Updating the kubebuilder scaffold
+
+The root Makefile, `config/`, and the project layout are kubebuilder
+output. When a new kubebuilder release lands, `alpha update` replays our
+changes on top of the new scaffold with a three way merge and leaves the
+result on a review branch:
+
+```bash
+GOTOOLCHAIN=auto kubebuilder alpha update \
+  --from-branch main \
+  --restore-path .github/workflows \
+  --restore-path README.md \
+  --restore-path hack/boilerplate.go.txt
+```
+
+`GOTOOLCHAIN=auto` lets the new scaffold pull a newer Go than the one we
+pin. The restore paths are files the scaffold also generates but that
+this project owns, so the merge keeps our version.
+
+Afterwards resolve any conflict markers, run `make verify` on the
+review branch, and merge it through a normal PR.
