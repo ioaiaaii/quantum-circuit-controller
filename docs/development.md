@@ -13,6 +13,12 @@ make tools-install
 make tools-check
 ```
 
+If you are on OSX with colima container runtime, it is suggested to start with rosetta, due to mutli-arch image builds.
+
+```shell
+colima stop && colima start --vm-type vz --vz-rosetta 
+```
+
 ## Building
 
 ```bash
