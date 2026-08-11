@@ -2,39 +2,43 @@ name: Proto
 
 on:
   push:
+    branches: [main]
+    paths:
+      - "proto/**"
+      - "gen/**"
   pull_request:
+    paths:
+      - "proto/**"
+      - "gen/**"
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  buf:
+  proto:
     permissions:
       contents: read
-    name: Lint protos
+    name: Lint Protos
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          submodules: true
+          # proto-breaking diffs against origin/main.
+          fetch-depth: 0
 
-      # Go is required because mise's go:* backends (controller-gen,
-      # setup-envtest) install via `go install`, even when this job only uses
-      # buf.
-      - name: Set up Go (toolchain pinned in go.mod)
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
         with:
-          go-version-file: go.mod
-
-      - name: Set up mise (provisions buf)
-        uses: jdx/mise-action@5083fe46898c414b2475087cc79da59e7da859e8 # v3.5.0
-        with:
-          experimental: true
+          go: "false"
 
       - name: Buf lint
-        working-directory: proto
-        run: buf lint
+        run: make proto-lint
 
-      - name: Buf format check
-        working-directory: proto
-        run: buf format --diff --exit-code
+      - name: Buf breaking
+        run: make proto-breaking

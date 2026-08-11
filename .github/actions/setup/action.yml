@@ -1,0 +1,25 @@
+name: Setup toolchain
+description: Go plus the tools pinned in .mise.toml, matching the local setup.
+
+inputs:
+  go:
+    description: >-
+      Install Go from go.mod. Needed by jobs whose make targets compile Go
+      or `go install` tools (lint, test, e2e, cd). mise itself does not
+      need it.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go (toolchain pinned in go.mod)
+      if: inputs.go == 'true'
+      uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      with:
+        go-version-file: go.mod
+
+    - name: Set up mise (tools pinned in .mise.toml)
+      uses: jdx/mise-action@5083fe46898c414b2475087cc79da59e7da859e8 # v3.5.0
+      with:
+        experimental: true

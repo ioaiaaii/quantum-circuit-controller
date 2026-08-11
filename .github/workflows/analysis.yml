@@ -1,0 +1,94 @@
+name: Analysis
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "qcc-executor/pyproject.toml"
+      - "qcc-executor/uv.lock"
+      - "build/package/**"
+      - "config/**"
+      - "deploy/**"
+      - "build/makefiles/**"
+      - "build/repo-operator"
+      - ".github/workflows/analysis.yml"
+  pull_request:
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "qcc-executor/pyproject.toml"
+      - "qcc-executor/uv.lock"
+      - "build/package/**"
+      - "config/**"
+      - "deploy/**"
+      - "build/makefiles/**"
+      - "build/repo-operator"
+      - ".github/workflows/analysis.yml"
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    permissions:
+      contents: read
+    name: Build and Scan Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+        with:
+          go: "false"
+
+      - id: trivy-db
+        name: Check Trivy DB SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          endpoint='/orgs/aquasecurity/packages/container/trivy-db/versions'
+          headers='Accept: application/vnd.github+json'
+          jqFilter='.[] | select(.metadata.container.tags[] | contains("latest")) | .name | sub("sha256:";"")'
+          sha=$(gh api -H "${headers}" "${endpoint}" | jq --raw-output "${jqFilter}")
+          echo "Trivy DB sha256:${sha}"
+          echo "SHA=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy Database
+        id: trivy-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ci/.cache/trivy
+          key: trivy-db-${{ runner.os }}-${{ steps.trivy-db.outputs.SHA }}
+          restore-keys: |
+            trivy-db-${{ runner.os }}-
+
+      - name: Lint images
+        run: make images-lint
+
+      - name: Build images
+        run: make images-build
+
+      - name: Security Scanning with Trivy
+        if: steps.trivy-cache.outputs.cache-hit != 'true'
+        run: make images-scan
+
+      - name: Inspect image efficiency
+        run: make images-inspect
+
+      - name: Misconfiguration Scanning with Trivy
+        run: make config-scan
+
+      - name: License Scanning with Trivy
+        run: make license-scan

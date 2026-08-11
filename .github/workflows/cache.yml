@@ -1,0 +1,52 @@
+name: Cache Update on Main
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "go.mod"
+      - "**.go"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cache-trivy:
+    permissions:
+      contents: read
+    name: Cache Trivy Database
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - id: trivy-db
+        name: Check Trivy DB SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          endpoint='/orgs/aquasecurity/packages/container/trivy-db/versions'
+          headers='Accept: application/vnd.github+json'
+          jqFilter='.[] | select(.metadata.container.tags[] | contains("latest")) | .name | sub("sha256:";"")'
+          sha=$(gh api -H "${headers}" "${endpoint}" | jq --raw-output "${jqFilter}")
+          echo "Trivy DB sha256:${sha}"
+          echo "SHA=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy Database
+        id: trivy-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ci/.cache/trivy
+          key: trivy-db-${{ runner.os }}-${{ steps.trivy-db.outputs.SHA }}
+          restore-keys: |
+            trivy-db-${{ runner.os }}-
+
+      - name: Initialize Trivy Database (if needed)
+        if: steps.trivy-cache.outputs.cache-hit != 'true'
+        run: make op-scan TRIVY_ARGS="fs --download-db-only --cache-dir build/ci/.cache/trivy"

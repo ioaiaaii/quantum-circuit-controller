@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".golangci.yml"
+      - "build/package/**"
+      - "qcc-executor/**"
+      - "Makefile"
+      - "build/makefiles/**"
+      - "build/repo-operator"
+      - ".mise.toml"
+      - ".github/actions/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".golangci.yml"
+      - "build/package/**"
+      - "qcc-executor/**"
+      - "Makefile"
+      - "build/makefiles/**"
+      - "build/repo-operator"
+      - ".mise.toml"
+      - ".github/actions/**"
+      - ".github/workflows/ci.yml"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    permissions:
+      contents: read
+    name: Lint Go and Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+
+      - name: Check linter configuration
+        run: make lint-config
+
+      - name: Lint Controller
+        run: make lint
+
+      - name: Lint Executor
+        run: make executor-lint
+
+  test:
+    permissions:
+      contents: read
+    name: Unit and Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+
+      - name: Run Controller tests
+        run: make test
+
+      - name: Run Executor tests
+        run: make executor-test             
