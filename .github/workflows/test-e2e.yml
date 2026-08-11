@@ -6,10 +6,34 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".pre-commit-config.yaml"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/proto.yml"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/analysis.yml"
+      - ".github/workflows/cache.yml"
+      - ".github/workflows/cd.yml"
+      - ".github/workflows/release.yml"
+      - "deploy/**"
+      - "examples/**"
   pull_request:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".pre-commit-config.yaml"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/proto.yml"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/analysis.yml"
+      - ".github/workflows/cache.yml"
+      - ".github/workflows/cd.yml"
+      - ".github/workflows/release.yml"
+      - "deploy/**"
+      - "examples/**"      
 
 permissions: {}
 
