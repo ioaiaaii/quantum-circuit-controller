@@ -1,9 +1,25 @@
 name: CD
 
+# Paths cover what reaches the images. GitHub does not evaluate path
+# filters for tag pushes, so releases always build.
 on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths:
+      - "**.go"
+      - "!**_test.go"
+      - "!test/**"
+      - "go.mod"
+      - "go.sum"
+      - "qcc-executor/**"
+      - "!qcc-executor/tests/**"
+      - "build/package/**"
+      - "build/makefiles/**"
+      - "build/repo-operator"
+      - ".github/actions/**"
+      - ".github/workflows/cd.yml"
+      - "Makefile"
 
 permissions: {}
 
