@@ -410,7 +410,7 @@ def _backend_has_durations(target) -> bool:  # type: ignore[no-untyped-def]
     for op_name in target.operation_names:
         try:
             instr_map = target[op_name]
-        except Exception:  # noqa: BLE001 — defensive
+        except Exception:  # noqa: BLE001, S112 — defensive
             continue
         for props in instr_map.values():
             if props is None:

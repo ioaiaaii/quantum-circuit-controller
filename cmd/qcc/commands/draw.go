@@ -121,7 +121,7 @@ func loadSourceFile(file string) (qccv1alpha1.SourceFormat, string, error) {
 	default:
 		return "", "", fmt.Errorf("unsupported file type %q: qcc draw accepts .qasm (OpenQASM 3) or .py (Qiskit)", ext)
 	}
-	b, err := os.ReadFile(file)
+	b, err := os.ReadFile(file) // #nosec G304 -- reading the user-supplied circuit file is the point
 	if err != nil {
 		return "", "", err
 	}

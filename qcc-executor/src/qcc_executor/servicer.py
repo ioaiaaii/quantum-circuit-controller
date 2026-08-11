@@ -607,7 +607,7 @@ class ExecutorServicer(executor_pb2_grpc.ExecutorServicer):
                 pos = handle.payload.queue_position()
                 if pos is not None:
                     return f"queued, position {pos}"
-            except Exception:  # noqa: BLE001 — best-effort, never fail the stream
+            except Exception:  # noqa: BLE001, S110 — best-effort, never fail the stream
                 pass
         if status == JobStatus.RUNNING:
             return "executing on backend"

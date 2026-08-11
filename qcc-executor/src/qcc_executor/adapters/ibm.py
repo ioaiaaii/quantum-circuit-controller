@@ -105,7 +105,7 @@ class IBMAdapter(Adapter):
                 tags = list(getattr(sampler.options.environment, "job_tags", None) or [])
                 tags.append(f"qcc.circuit.uid:{circuit_uid}")
                 sampler.options.environment.job_tags = tags
-            except Exception:  # noqa: BLE001 — best-effort, never break submit on this
+            except Exception:  # noqa: BLE001, S110 — best-effort, never break submit on this
                 pass
 
         # SamplerV2.run accepts shots + an `options` dict (different from
@@ -333,7 +333,7 @@ def _extract_usage_seconds(job: Any) -> float:  # type: ignore[no-untyped-def]
                 qs = u.get("quantum_seconds")
                 if isinstance(qs, (int, float)):
                     return float(qs)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         pass
 
     return 0.0

@@ -10,6 +10,7 @@ linters:
     - ginkgolinter
     - goconst
     - gocyclo
+    - gosec
     - govet
     - ineffassign
     - lll
@@ -28,6 +29,10 @@ linters:
       logcheck:
         type: "module"
         description: Checks Go logging calls for Kubernetes logging conventions.
+    gosec:
+      excludes:
+        # Proto-boundary integer conversions; CRD validation bounds every value.
+        - G115
     revive:
       rules:
         - name: comment-spacings
@@ -45,6 +50,9 @@ linters:
           - dupl
           - lll
         path: internal/*
+      - linters:
+          - gosec
+        path: test/
     paths:
       - third_party$
       - builtin$
