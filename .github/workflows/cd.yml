@@ -3,6 +3,7 @@ name: CD
 on:
   push:
     branches: [main]
+    tags: ["v*"]
 
 permissions: {}
 
@@ -25,6 +26,8 @@ jobs:
 
       - name: Set up the toolchain
         uses: ./.github/actions/setup
+        with:
+          go: "false"
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -40,27 +43,12 @@ jobs:
       # amd64 only: the arm64 leg runs under QEMU on hosted runners, which
       # is slow and flaky. Native arm runners are free once the repo is
       # public; revisit then.
-      - name: Build and publish both images
+      # Branch pushes publish the moving `edge` tag, tag pushes publish
+      # their version. `latest` stays reserved for releases.
+      - name: Build and publish QCC images
         run: >
           make images-build
           IMAGE_MODE=publish
           IMAGE_REPO=ghcr.io/ioaiaaii
           IMAGE_PLATFORMS=linux/amd64
-          IMAGE_TAG=${{ github.sha }}
-
-      - name: Record digests
-        run: |
-          make op-image-digest IMAGE_NAME=qcc-controller >> "$GITHUB_STEP_SUMMARY"
-          make op-image-digest IMAGE_NAME=qcc-executor >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Render the installer against the published images
-        run: >
-          make build-installer
-          IMG=ghcr.io/ioaiaaii/qcc-controller:${{ github.sha }}
-          EXECUTOR_IMG=ghcr.io/ioaiaaii/qcc-executor:${{ github.sha }}
-
-      - name: Upload install.yaml
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: install-yaml
-          path: dist/install.yaml
+          IMAGE_TAG=${{ github.ref_type == 'branch' && 'edge' || github.ref_name }}
