@@ -26,11 +26,11 @@ CLI_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 
 ##@ Workflows
 
-.PHONY: verify
-verify: tools-check lint proto-lint executor-lint images-lint config-scan docs-check test executor-test test-e2e ## Run every lint and test across the stack, preparing for a PR.
+.PHONY: ci
+ci: tools-check lint proto-lint executor-lint images-lint config-scan docs-check test executor-test ## Stage 1, cluster-free: every lint and test. Stage 2 is test-e2e.
 
 # Not part of `generate`: buf calls the Buf Schema Registry, and generate is a
-# prerequisite of build, run, test, test-e2e, and build-installer.
+# prerequisite of build, run, test, and build-installer.
 .PHONY: generate-all
 generate-all: generate proto-generate ## Run every generator, including proto.
 
