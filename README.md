@@ -6,12 +6,13 @@
 
 # Quantum Circuit Controller
 
-[![Tests](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/test.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/test.yml)
+[![CI](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/ci.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/ci.yml)
 [![E2E](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/test-e2e.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/test-e2e.yml)
-[![Executor](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/executor.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/executor.yml)
-[![Lint](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/lint.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/lint.yml)
 [![Proto](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/proto.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/proto.yml)
 [![Docs](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/docs.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/docs.yml)
+[![Analysis](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/analysis.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/analysis.yml)
+[![CD](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/cd.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/cd.yml)
+[![Release](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/release.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/release.yml)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 
