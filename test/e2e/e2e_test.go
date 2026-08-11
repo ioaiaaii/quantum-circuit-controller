@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -142,7 +143,7 @@ var _ = Describe("Manager", Ordered, func() {
 	SetDefaultEventuallyTimeout(2 * time.Minute)
 	SetDefaultEventuallyPollingInterval(time.Second)
 
-	Context("Manager", func() {
+	Context("Manager", Label("smoke"), func() {
 		It("should run successfully", func() {
 			By("validating that the controller-manager pod is running as expected")
 			verifyControllerUp := func(g Gomega) {
@@ -281,6 +282,128 @@ var _ = Describe("Manager", Ordered, func() {
 		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
 		//    strings.ToLower(<Kind>),
 		// ))
+	})
+
+	Context("Circuit execution", Ordered, Label("functional"), func() {
+		const (
+			qpuName       = "aer-statevector"
+			qpuSample     = "config/samples/qpu/local/aer-statevector.yaml"
+			circuitName   = "bell-state"
+			circuitSample = "config/samples/circuits/bell.yaml"
+			bellShots     = int64(1024)
+		)
+
+		BeforeAll(func() {
+			By("waiting for the controller and executor deployments to be ready")
+			cmd := exec.Command("kubectl", "rollout", "status", "deployment",
+				"-n", namespace, "--timeout=3m")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Deployments did not become ready")
+		})
+
+		// QPUs are cluster-scoped, so they outlive the namespace deletion in
+		// the outer AfterAll. Delete the CRs while the controller still runs.
+		AfterAll(func() {
+			By("cleaning up functional-spec resources")
+			cmd := exec.Command("kubectl", "delete", "circuit",
+				circuitName, "no-backend", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "qpu", qpuName, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should mark a local QPU Available", func() {
+			By("registering the aer-statevector sample QPU")
+			cmd := exec.Command("kubectl", "apply", "-f", qpuSample)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply the QPU sample")
+
+			By("waiting for the QPU to report Available")
+			verifyQPUAvailable := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "qpu", qpuName,
+					"-o", "jsonpath={.status.availability}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Available"))
+			}
+			Eventually(verifyQPUAvailable).Should(Succeed())
+		})
+
+		It("should complete a bell Circuit with counts summing to shots", func() {
+			By("submitting the bell sample Circuit")
+			cmd := exec.Command("kubectl", "apply", "-f", circuitSample)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply the Circuit sample")
+
+			By("waiting for the Circuit to reach phase Succeeded")
+			verifyCircuitSucceeded := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "circuit", circuitName,
+					"-o", "jsonpath={.status.phase}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Succeeded"))
+			}
+			Eventually(verifyCircuitSucceeded, 3*time.Minute).Should(Succeed())
+
+			By("reading the measurement counts off the Circuit status")
+			cmd = exec.Command("kubectl", "get", "circuit", circuitName, "-o", "json")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			var circuit struct {
+				Status struct {
+					SelectedQPU string           `json:"selectedQPU"`
+					Results     map[string]int64 `json:"results"`
+				} `json:"status"`
+			}
+			Expect(json.Unmarshal([]byte(output), &circuit)).To(Succeed())
+
+			Expect(circuit.Status.SelectedQPU).To(Equal(qpuName))
+			var total int64
+			for outcome, count := range circuit.Status.Results {
+				Expect(outcome).To(BeElementOf("00", "11"),
+					"an ideal bell state only produces correlated outcomes")
+				total += count
+			}
+			Expect(total).To(Equal(bellShots), "counts must sum to spec.shots")
+			Expect(circuit.Status.Results).To(HaveKey("00"))
+			Expect(circuit.Status.Results).To(HaveKey("11"))
+		})
+
+		It("should reject a Circuit with no eligible backend", func() {
+			By("submitting a Circuit whose backendSelector matches no QPU")
+			manifest := `apiVersion: qcc.io/v1alpha1
+kind: Circuit
+metadata:
+  name: no-backend
+spec:
+  mode: run
+  shots: 1
+  backendSelector:
+    backendName: no-such-backend
+  source:
+    format: openqasm3
+    body: |
+      OPENQASM 3.0;
+      include "stdgates.inc";
+      qubit[1] q;
+      bit[1] c;
+      c[0] = measure q[0];
+`
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(manifest)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply the no-backend Circuit")
+
+			By("waiting for the Circuit to fail with NoEligibleBackend")
+			verifyRejected := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "circuit", "no-backend",
+					"-o", `jsonpath={.status.phase} {.status.conditions[?(@.type=="Failed")].reason}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Failed NoEligibleBackend"))
+			}
+			Eventually(verifyRejected).Should(Succeed())
+		})
 	})
 })
 

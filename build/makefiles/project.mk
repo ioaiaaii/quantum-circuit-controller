@@ -1,55 +1,103 @@
-# Project-level settings and the cross-stack umbrellas.
-#
-# Nothing here belongs to kubebuilder's scaffold. Overrides live in this file
-# rather than in the root Makefile so that root stays close to stock and
-# `kubebuilder alpha update` merges it without conflicts.
-
-# .SHELLFLAGS is silently ignored before GNU Make 3.82, so a recipe would run
-# without -e and a failing line would not stop the target. macOS ships 3.81.
-ifeq ($(filter 4.% 5.%,$(MAKE_VERSION)),)
-$(error GNU Make $(MAKE_VERSION) is too old. Run `mise install`, then re-run)
-endif
+# QCC settings and workflow umbrellas. The scaffold stays in the root
+# Makefile; op-* interfaces come from build/repo-operator.
 
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -euo pipefail -c
 .DELETE_ON_ERROR:
 MAKEFLAGS += --warn-undefined-variables
 
-# Bare `make` prints help. Set explicitly so include order cannot decide it;
-# the scaffold's first target is `all`, which would otherwise win.
+# Bare `make` prints help, not the scaffold's `all`.
 .DEFAULT_GOAL := help
 
-# Match GOTOOLCHAIN to go.mod. A bootstrap Go on a different patch version
-# races with the auto-fetched one during parallel compilation.
+# A bootstrap Go on a different patch version races with the auto-fetched one.
 GO_VERSION := $(shell awk '/^go [0-9]+(\.[0-9]+)+/ {print $$2; exit}' go.mod 2>/dev/null)
 ifneq ($(GO_VERSION),)
 export GOTOOLCHAIN ?= go$(GO_VERSION)
 endif
 
-# --- Components ---
-# IMG comes from the root Makefile (kubebuilder owns it); the executor is ours.
+# IMG is the scaffold's; the executor image is ours.
 EXECUTOR_IMG ?= qcc-executor:$(IMAGE_TAG)
-
-CONTROLLER_DIR  := cmd/qcc-controller
-CONTROLLER_DOCK := build/package/qcc-controller/Dockerfile
-EXECUTOR_DIR    := qcc-executor
-EXECUTOR_DOCK   := build/package/qcc-executor/Dockerfile
-CLI_DIR         := cmd/qcc
+EXECUTOR_DIR := qcc-executor
+CLI_DIR      := cmd/qcc
+PROTO_DIR    ?= proto
 
 # Baked into `qcc version` via -ldflags.
 CLI_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-# --- Cross-stack umbrellas ---
-# QCC is polyglot; kubebuilder's generate, lint and test cover Go only. Adding
-# prerequisites without a recipe *augments* an existing target instead of
-# overriding it, so the scaffold's recipe still runs and no rename is needed.
-# `make lint` therefore covers Go, proto, Python, Dockerfiles and docs.
+##@ Workflows
 
-lint: proto-lint executor-lint images-lint docs-check
-test: executor-test
+.PHONY: verify
+verify: tools-check lint proto-lint executor-lint images-lint config-scan docs-check test executor-test test-e2e ## Run every lint and test across the stack, preparing for a PR.
 
-# Not `generate: proto-generate`. build, run, test, test-e2e and
-# build-installer all depend on generate, and buf generate calls the Buf
-# Schema Registry — that put a network round-trip on every build.
+# Not part of `generate`: buf calls the Buf Schema Registry, and generate is a
+# prerequisite of build, run, test, test-e2e, and build-installer.
 .PHONY: generate-all
 generate-all: generate proto-generate ## Run every generator, including proto.
+
+##@ Toolchain
+
+.PHONY: tools-install
+tools-install: ## Provision the toolchain pinned in .mise.toml.
+	mise install
+
+.PHONY: tools-check
+tools-check: ## Verify the pinned toolchain is installed.
+	@command -v go >/dev/null 2>&1 || { echo "missing tool: go (https://go.dev/dl/)"; exit 1; }
+	@missing="$$(mise ls --missing 2>/dev/null)"; \
+	if [ -n "$$missing" ]; then echo "$$missing"; echo "run 'make tools-install'"; exit 1; fi
+	@echo "Toolchain matches .mise.toml."
+
+##@ CLI
+
+.PHONY: qcc-build
+qcc-build: fmt vet ## Build the qcc CLI into ./dist/ with version baked in.
+	@mkdir -p dist
+	go build -ldflags "-X main.version=$(CLI_VERSION)" -o dist/qcc ./$(CLI_DIR)
+
+.PHONY: qcc-install
+qcc-install: ## Install the qcc CLI into $GOBIN (or ~/go/bin).
+	go install -ldflags "-X main.version=$(CLI_VERSION)" ./$(CLI_DIR)
+
+##@ Protobuf
+
+.PHONY: proto-lint
+proto-lint: ## Lint .proto files via buf.
+	cd $(PROTO_DIR) && buf lint
+
+.PHONY: proto-format
+proto-format: ## Format .proto files via buf.
+	cd $(PROTO_DIR) && buf format -w
+
+.PHONY: proto-generate
+proto-generate: ## Generate Go + Python stubs from .proto files.
+	cd $(PROTO_DIR) && buf generate
+
+# Against the remote-tracking ref, not the local branch: CI checkouts are
+# detached with no local main, and origin/main exists in both places.
+.PHONY: proto-breaking
+proto-breaking: ## Check for breaking proto changes vs main.
+	cd $(PROTO_DIR) && buf breaking --against '../.git#ref=refs/remotes/origin/main,subdir=proto'
+
+##@ Executor
+
+.PHONY: executor-test
+executor-test: ## Run executor unit tests via uv + pytest.
+	cd $(EXECUTOR_DIR) && uv run pytest -v
+
+.PHONY: executor-lint
+executor-lint: ## Lint executor Python code via uv + ruff.
+	cd $(EXECUTOR_DIR) && uv run ruff check .
+
+##@ Documentation
+
+# --offline keeps PR runs from flaking on third-party outages;
+# --include-fragments verifies heading anchors.
+.PHONY: docs-check
+docs-check: ## Verify links and anchors in all tracked markdown (offline).
+	git ls-files -co --exclude-standard '*.md' | while IFS= read -r f; do [ -f "$$f" ] && printf '%s\n' "$$f"; done | xargs lychee --offline --include-fragments --no-progress
+
+# Manual: needs a running deployment, plus ttyd and ffmpeg alongside vhs.
+.PHONY: docs-demo
+docs-demo: ## Record the README demo GIF.
+	vhs docs/assets/demo.tape
+	@ls -lh docs/assets/figures/qcc-demo.gif

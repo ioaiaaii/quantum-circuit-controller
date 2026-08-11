@@ -116,34 +116,6 @@ build: manifests generate fmt vet ## Build manager binary.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/qcc-controller
 
-# If you wish to build the manager image targeting other platforms you can use the --platform flag.
-# (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
-# More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-.PHONY: docker-build
-docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
-
-.PHONY: docker-push
-docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
-
-# PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
-# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
-# - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
-# - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
-# To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
-.PHONY: docker-buildx
-docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name quantum-circuit-controller-builder
-	$(CONTAINER_TOOL) buildx use quantum-circuit-controller-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm quantum-circuit-controller-builder
-	rm Dockerfile.cross
-
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
@@ -269,61 +241,13 @@ endef
 OPERATOR_PATH  := build/repo-operator
 DEFAULT_BRANCH := main
 
-include $(OPERATOR_PATH)/makefiles/base.mk
+include $(OPERATOR_PATH)/makefiles/core.mk
 include $(OPERATOR_PATH)/makefiles/changelog.mk
-include $(OPERATOR_PATH)/makefiles/golang.mk
-include $(OPERATOR_PATH)/makefiles/package.mk
-include $(OPERATOR_PATH)/makefiles/security.mk
+include $(OPERATOR_PATH)/makefiles/go.mk
+include $(OPERATOR_PATH)/makefiles/image.mk
+include $(OPERATOR_PATH)/makefiles/scan.mk
 
 include build/makefiles/project.mk
-include build/makefiles/qcc.mk
 include build/makefiles/images.mk
 include build/makefiles/platform.mk
-include build/makefiles/docs.mk
-
-##@ Helm Deployment
-
-## Helm binary to use for deploying the chart
-HELM ?= helm
-## Namespace to deploy the Helm release
-HELM_NAMESPACE ?= quantum-circuit-controller-system
-## Name of the Helm release
-HELM_RELEASE ?= quantum-circuit-controller
-## Path to the Helm chart directory
-HELM_CHART_DIR ?= deploy/helm/chart
-## Additional arguments to pass to helm commands
-HELM_EXTRA_ARGS ?=
-
-.PHONY: install-helm
-install-helm: ## Install the latest version of Helm.
-	@command -v $(HELM) >/dev/null 2>&1 || { \
-		echo "Installing Helm..." && \
-		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
-	}
-
-.PHONY: helm-deploy
-helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
-	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
-		--namespace $(HELM_NAMESPACE) \
-		--create-namespace \
-		--set manager.image.repository=$${IMG%:*} \
-		--set manager.image.tag=$${IMG##*:} \
-		--wait \
-		--timeout 5m \
-		$(HELM_EXTRA_ARGS)
-
-.PHONY: helm-uninstall
-helm-uninstall: ## Uninstall the Helm release from the K8s cluster.
-	$(HELM) uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
-
-.PHONY: helm-status
-helm-status: ## Show Helm release status.
-	$(HELM) status $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
-
-.PHONY: helm-history
-helm-history: ## Show Helm release history.
-	$(HELM) history $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
-
-.PHONY: helm-rollback
-helm-rollback: ## Rollback to previous Helm release.
-	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+include build/makefiles/analysis.mk

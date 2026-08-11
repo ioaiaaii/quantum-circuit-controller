@@ -1,10 +1,8 @@
-# Local dev platform: a long-lived kind cluster with the observability stack
-# QCC's metrics land in, plus the loops that deploy onto it.
+# Per-branch kind cluster with the observability stack, and the dev loops.
 
-##@ Local Dev Platform (kind + observability stack)
+##@ Platform
 
-# One environment per branch, like the image tags. IMAGE_TAG is the
-# DNS-safe form of the branch or tag.
+# One environment per branch: IMAGE_TAG is the DNS-safe branch or tag.
 DEV_CLUSTER ?= qcc-dev-$(IMAGE_TAG)
 DEV_NS      ?= monitoring
 
@@ -41,7 +39,6 @@ platform-status: ## Show platform stack status (clusters, releases, pods)
 	@echo "--- pods in $(DEV_NS) ---"
 	@kubectl get pods -n $(DEV_NS) 2>/dev/null || true
 
-# Loading lives here, with the cluster it loads into.
 .PHONY: controller-image-load
 controller-image-load: ## Load the qcc-controller image into the local kind cluster.
 	kind load docker-image $(IMG) --name $(DEV_CLUSTER)

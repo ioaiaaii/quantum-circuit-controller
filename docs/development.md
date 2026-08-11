@@ -74,15 +74,14 @@ the environment. Grafana:
 
 | Suite | Command | Covers |
 |---|---|---|
-| Go unit and envtest | `make test` | reconcilers against a real kube-apiserver with a fake executor; also runs the Python suite |
+| Go unit and envtest | `make test` | reconcilers against a real kube-apiserver with a fake executor |
 | Python unit | `make executor-test` | adapters, qiskit_io, in-process gRPC round-trips with a real AerAdapter |
 | End to end | `make test-e2e` | both images on a throwaway kind cluster, independent of the dev cluster |
 
 ## Before opening a PR
 
 ```bash
-make lint   # Go, proto, Python, both Dockerfiles, and doc links
-make test
+make check   # every lint and test across the stack
 ```
 
 If you changed the API or the gRPC contract, regenerate and commit the
