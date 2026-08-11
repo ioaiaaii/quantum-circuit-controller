@@ -78,17 +78,18 @@ the environment. Grafana:
 | Python unit | `make executor-test` | adapters, qiskit_io, in-process gRPC round-trips with a real AerAdapter |
 | End to end | `make test-e2e` | both images on a throwaway kind cluster, independent of the dev cluster |
 
-`make verify` checks the toolchain, then runs every lint and every
-test suite, the e2e cycle included. It is the full CI surface in one
-command, so expect the kind cluster round to take several minutes.
+Before a PR, run the same two stages the workflows run. Stage one is
+cluster-free and takes a couple of minutes. Stage two is the system
+suite on a throwaway kind cluster and takes several more:
+
+```bash
+make ci         # stage 1: toolchain check, every lint, every unit and integration test
+make test-e2e   # stage 2: the system suite
+```
 
 ## Before opening a PR
 
-```bash
-make verify   # every lint and test across the stack, e2e included
-```
-
-If you changed the API or the gRPC contract, regenerate and commit the
+Run both stages above. If you changed the API or the gRPC contract, regenerate and commit the
 output. Never edit generated files by hand:
 
 ```bash
@@ -116,5 +117,5 @@ GOTOOLCHAIN=auto kubebuilder alpha update \
 pin. The restore paths are files the scaffold also generates but that
 this project owns, so the merge keeps our version.
 
-Afterwards resolve any conflict markers, run `make verify` on the
-review branch, and merge it through a normal PR.
+Afterwards resolve any conflict markers, run `make ci` and
+`make test-e2e` on the review branch, and merge it through a normal PR.
