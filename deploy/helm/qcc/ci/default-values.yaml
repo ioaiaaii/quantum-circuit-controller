@@ -1,0 +1,3 @@
+# Install-test values. Chart defaults boot without external services;
+# the OTel endpoint stays unset because the test cluster runs no
+# collector.

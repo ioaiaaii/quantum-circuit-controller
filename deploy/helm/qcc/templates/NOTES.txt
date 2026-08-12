@@ -1,0 +1,16 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+Watch the workloads start:
+
+  kubectl get pods -n {{ .Release.Namespace }}
+
+Register a local simulator QPU, then run a circuit:
+
+  kubectl apply -f https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/{{ .Chart.AppVersion }}/config/samples/qpu/local/aer-statevector.yaml
+  kubectl apply -f https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/{{ .Chart.AppVersion }}/config/samples/circuits/bell.yaml
+  kubectl get circuits -w
+
+IBM Quantum hardware needs a Secret in {{ .Release.Namespace }} with
+QISKIT_IBM_TOKEN and QISKIT_IBM_CHANNEL keys, referenced by executor.env.
+
+Docs: https://github.com/ioaiaaii/quantum-circuit-controller/tree/main/docs

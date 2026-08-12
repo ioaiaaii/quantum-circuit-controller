@@ -1,0 +1,19 @@
+apiVersion: v2
+name: qcc
+kubeVersion: ">=1.26.0-0"
+description: Quantum Circuit Controller, a Kubernetes operator that runs quantum circuits as declarative resources.
+type: application
+version: 0.1.0
+appVersion: v1.1.1
+icon: https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/main/docs/assets/images/qcc-social.png
+keywords:
+  - quantum
+  - qiskit
+  - operator
+  - kubernetes
+  - qpu
+maintainers:
+  - name: ioaiaaii
+    url: https://github.com/ioaiaaii
+sources:
+  - https://github.com/ioaiaaii/quantum-circuit-controller

@@ -28,7 +28,7 @@ VERSION_PKG := github.com/ioaiaaii/quantum-circuit-controller/internal/version
 ##@ Workflows
 
 .PHONY: ci
-ci: tools-check lint proto-lint executor-lint images-lint config-scan docs-check test executor-test ## Stage 1, cluster-free: every lint and test. Stage 2 is test-e2e.
+ci: tools-check lint proto-lint executor-lint images-lint chart-lint config-scan docs-check test executor-test ## Stage 1, cluster-free: every lint and test. Stage 2 is test-e2e.
 
 # Not part of `generate`: buf calls the Buf Schema Registry, and generate is a
 # prerequisite of build, run, test, and build-installer.
@@ -98,6 +98,33 @@ executor-test: ## Run executor unit tests via uv + pytest.
 .PHONY: executor-lint
 executor-lint: ## Lint executor Python code via uv + ruff.
 	cd $(EXECUTOR_DIR) && uv run ruff check .
+
+##@ Chart
+
+CHART_DIR     := deploy/helm/qcc
+CHART_VERSION  = $(shell awk '/^version:/{print $$2}' $(CHART_DIR)/Chart.yaml)
+CHART_OCI_REPO ?= oci://ghcr.io/ioaiaaii/charts
+
+.PHONY: chart-lint
+chart-lint: ## Lint the Helm chart with chart-testing.
+	@$(MAKE) --no-print-directory op-chart-lint
+
+.PHONY: chart-test
+chart-test: ## Lint and install the chart on the current cluster.
+	@$(MAKE) --no-print-directory op-chart-test
+
+.PHONY: chart-package
+chart-package: ## Package the chart into dist/.
+	@$(MAKE) --no-print-directory op-chart-package CHART_DIR=helm/qcc
+
+.PHONY: chart-push
+chart-push: chart-package ## Push the packaged chart to the OCI registry.
+	@$(MAKE) --no-print-directory op-chart-push CHART_PACKAGE=qcc-$(CHART_VERSION).tgz CHART_OCI_REPO=$(CHART_OCI_REPO)
+
+# The chart release tag must match Chart.yaml, e.g. chart-v0.1.0.
+.PHONY: chart-version-check
+chart-version-check: ## Verify TAG matches the chart version.
+	@test "$(TAG)" = "chart-v$(CHART_VERSION)" || { echo "tag $(TAG) does not match Chart.yaml version $(CHART_VERSION)"; exit 1; }
 
 ##@ Documentation
 

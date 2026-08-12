@@ -1,3 +1,8 @@
 chart-dirs:
   - deploy/helm/
-upgrade: true
+target-branch: main
+# Chart versions gate at release time via chart-v* tags, not per commit.
+check-version-increment: false
+# Maintainer validation needs a parseable git remote domain in the
+# container, and validates GitHub handles this chart does not need.
+validate-maintainers: false

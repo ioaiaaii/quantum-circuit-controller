@@ -1,0 +1,157 @@
+# -- Override the full release name. Leave empty to use the chart's computed fullname.
+fullnameOverride: ""
+
+image:
+  # -- Container registry hosting both images.
+  registry: ghcr.io
+  # -- Image pull policy. One of: Always|IfNotPresent|Never.
+  pullPolicy: IfNotPresent
+  # -- List of imagePullSecrets to use for private registries.
+  # Example: ["my-regcred"]
+  pullSecrets: []
+
+serviceAccount:
+  # -- If true, create the controller ServiceAccount. (bool)
+  create: true
+  # -- ServiceAccount name. Leave empty to derive from the fullname. (string)
+  name: ""
+  # -- Extra annotations for the ServiceAccount. (map[string]string)
+  annotations: {}
+
+rbac:
+  # -- If true, create the controller ClusterRole, Role, and bindings. (bool)
+  create: true
+
+# -- Settings for the qcc-controller Deployment, the operator reconciling
+# Circuits and QPUs.
+# @default -- see the controller.* keys below
+controller:
+  image:
+    # -- Repository (image name) within the registry.
+    repository: ioaiaaii/qcc-controller
+    # -- Image tag to deploy. Leave empty to use the chart appVersion.
+    tag: ""
+  # -- Number of controller replicas. More than one requires leaderElection. (int)
+  replicaCount: 1
+  # -- Graceful termination window for the controller. (int seconds)
+  terminationGracePeriodSeconds: 10
+  # -- If true, enable leader election and its Role and RoleBinding. (bool)
+  leaderElection: true
+  otel:
+    # -- OTLP gRPC endpoint for metrics and traces, e.g.
+    # otelcol.monitoring.svc.cluster.local:4317. Empty disables the exporter. (string)
+    endpoint: ""
+    # -- If true, ship OTLP without TLS. (bool)
+    insecure: true
+  # -- Environment variables appended to the controller container. (corev1.EnvVar[])
+  extraEnvVars: []
+  # -- Container resource requests and limits. (corev1.ResourceRequirements)
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+  # -- Extra annotations for controller pods. (map[string]string)
+  podAnnotations: {}
+  # -- Pod-level security context. (corev1.PodSecurityContext)
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  # -- Container-level security context. (corev1.SecurityContext)
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  # -- Affinity rules for pod scheduling. (corev1.Affinity)
+  affinity: {}
+  # -- Node selector for scheduling. (map[string]string)
+  nodeSelector: {}
+  # -- Tolerations for tainted nodes. (corev1.Toleration[])
+  tolerations: []
+  # -- Topology spread constraints. (corev1.TopologySpreadConstraint[])
+  topologySpreadConstraints: []
+  # -- PriorityClass for controller pods. (string)
+  priorityClassName: ""
+
+# -- Settings for the qcc-executor Deployment, the Qiskit gRPC service the
+# controller dials for transpilation and execution.
+# @default -- see the executor.* keys below
+executor:
+  image:
+    # -- Repository (image name) within the registry.
+    repository: ioaiaaii/qcc-executor
+    # -- Image tag to deploy. Leave empty to use the chart appVersion.
+    tag: ""
+  # -- Number of executor replicas. Must stay 1: job results live in
+  # process memory, so a second replica would lose them. (int)
+  replicaCount: 1
+  # -- Graceful termination window for in-flight circuit jobs. (int seconds)
+  terminationGracePeriodSeconds: 10
+  # -- Update strategy. Recreate: two executors must not overlap while
+  # results live in process memory. (object)
+  updateStrategy:
+    type: Recreate
+  # -- Mount the ServiceAccount token. The executor never calls the
+  # Kubernetes API, so it is off by default. (bool)
+  automountServiceAccountToken: false
+  # -- Environment for the executor container. QCC_EXECUTOR_LOG_LEVEL and
+  # QCC_EXECUTOR_WORKERS tune the service. The QISKIT_IBM_* pair reads an
+  # optional Secret for IBM Quantum hardware, local simulators need none. (corev1.EnvVar[])
+  env:
+    - name: QCC_EXECUTOR_LOG_LEVEL
+      value: INFO
+    - name: QCC_EXECUTOR_WORKERS
+      value: "8"
+    - name: QISKIT_IBM_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: ibm-quantum-token
+          key: QISKIT_IBM_TOKEN
+          optional: true
+    - name: QISKIT_IBM_CHANNEL
+      valueFrom:
+        secretKeyRef:
+          name: ibm-quantum-token
+          key: QISKIT_IBM_CHANNEL
+          optional: true
+  service:
+    # -- Service type for the executor gRPC endpoint. (string)
+    type: ClusterIP
+    # -- gRPC port the Service exposes and the controller dials. (int)
+    port: 9000
+  # -- Container resource requests and limits. Transpilation is CPU-heavy. (corev1.ResourceRequirements)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  # -- Extra annotations for executor pods. (map[string]string)
+  podAnnotations: {}
+  # -- Pod-level security context. (corev1.PodSecurityContext)
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  # -- Container-level security context. Qiskit writes caches, so the root
+  # filesystem stays writable. (corev1.SecurityContext)
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
+  # -- Affinity rules for pod scheduling. (corev1.Affinity)
+  affinity: {}
+  # -- Node selector for scheduling. (map[string]string)
+  nodeSelector: {}
+  # -- Tolerations for tainted nodes. (corev1.Toleration[])
+  tolerations: []
+  # -- Topology spread constraints. (corev1.TopologySpreadConstraint[])
+  topologySpreadConstraints: []
+  # -- PriorityClass for executor pods. (string)
+  priorityClassName: ""
