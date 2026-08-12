@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - CITATION.cff
       - "LICENSE"
       - ".gitignore"
       - ".pre-commit-config.yaml"
@@ -22,6 +23,7 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - CITATION.cff
       - "LICENSE"
       - ".gitignore"
       - ".pre-commit-config.yaml"
