@@ -40,6 +40,7 @@ FROM ${BASE_IMAGE}@${BASE_DIGEST}
 ARG BASE_IMAGE
 ARG BASE_DIGEST
 ARG REVISION
+ARG VERSION=dev
 
 # GHCR reads source, description and licenses. revision is the only route back
 # to the commit; base.digest finds images carrying a vulnerable base.
@@ -59,7 +60,9 @@ COPY --from=builder /app/src /app/src
 
 ENV PYTHONPATH="/app/site-packages:/app/src" \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    QCC_EXECUTOR_VERSION=${VERSION} \
+    QCC_EXECUTOR_REVISION=${REVISION}
 
 WORKDIR /app
 USER 65532:65532

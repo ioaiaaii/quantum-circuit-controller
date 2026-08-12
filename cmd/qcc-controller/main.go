@@ -43,6 +43,7 @@ import (
 	"github.com/ioaiaaii/quantum-circuit-controller/internal/executor"
 	"github.com/ioaiaaii/quantum-circuit-controller/internal/observability"
 	observabilitymetrics "github.com/ioaiaaii/quantum-circuit-controller/internal/observability/metrics"
+	"github.com/ioaiaaii/quantum-circuit-controller/internal/version"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -110,6 +111,8 @@ func main() {
 	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
 	slog.SetDefault(slog.New(slogHandler))
 	ctrl.SetLogger(logr.FromSlogHandler(slogHandler))
+	setupLog.Info("starting qcc-controller",
+		"version", version.Version(), "commit", version.BuildHash, "built", version.BuildTime)
 
 	// OpenTelemetry SDK: meter provider (OTLP-gRPC push to Collector)
 	// + tracer provider (skeleton, no-op exporter) + propagator
