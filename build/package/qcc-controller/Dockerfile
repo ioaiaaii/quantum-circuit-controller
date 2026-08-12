@@ -8,7 +8,8 @@ ARG BASE_IMAGE=gcr.io/distroless/static:nonroot
 ARG BASE_DIGEST=sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6
 
 # golang:1.25.7, matching go.mod
-FROM golang@sha256:2005724102f45917a63e9d092fc0e4ea56ea575048ce147caad5f5f61502c365 AS builder
+# BUILDPLATFORM: build natively, cross-compile via GOOS/GOARCH.
+FROM --platform=$BUILDPLATFORM golang@sha256:2005724102f45917a63e9d092fc0e4ea56ea575048ce147caad5f5f61502c365 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -36,7 +37,10 @@ ARG REVISION
 
 # GHCR reads source, description and licenses. revision is the only route back
 # to the commit; base.digest finds images carrying a vulnerable base.
-LABEL org.opencontainers.image.source="https://github.com/ioaiaaii/quantum-circuit-controller" \
+LABEL org.opencontainers.image.title="qcc-controller" \
+      org.opencontainers.image.url="https://github.com/ioaiaaii/quantum-circuit-controller" \
+      org.opencontainers.image.documentation="https://github.com/ioaiaaii/quantum-circuit-controller/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/ioaiaaii/quantum-circuit-controller" \
       org.opencontainers.image.description="Kubernetes controller for the Quantum Circuit Controller" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.revision="${REVISION}" \

@@ -43,7 +43,10 @@ ARG REVISION
 
 # GHCR reads source, description and licenses. revision is the only route back
 # to the commit; base.digest finds images carrying a vulnerable base.
-LABEL org.opencontainers.image.source="https://github.com/ioaiaaii/quantum-circuit-controller" \
+LABEL org.opencontainers.image.title="qcc-executor" \
+      org.opencontainers.image.url="https://github.com/ioaiaaii/quantum-circuit-controller" \
+      org.opencontainers.image.documentation="https://github.com/ioaiaaii/quantum-circuit-controller/tree/main/docs" \
+      org.opencontainers.image.source="https://github.com/ioaiaaii/quantum-circuit-controller" \
       org.opencontainers.image.description="Qiskit execution service for the Quantum Circuit Controller" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.revision="${REVISION}" \
