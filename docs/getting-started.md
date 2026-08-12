@@ -56,7 +56,7 @@ Install the chart from the OCI registry, wiring the controller's OTLP
 exporter to the Collector from the previous step:
 
 ```bash
-helm install qcc oci://ghcr.io/ioaiaaii/charts/qcc --version 0.1.0 \
+helm install qcc oci://ghcr.io/ioaiaaii/charts/qcc \
   -n qcc-system --create-namespace \
   --set controller.otel.endpoint=otelcol-opentelemetry-collector.monitoring.svc.cluster.local:4317
 ```
