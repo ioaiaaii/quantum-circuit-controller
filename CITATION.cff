@@ -5,6 +5,7 @@ type: software
 authors:
   - family-names: Savvaidis
     given-names: Ioannis
+    affiliation: "Democritus University of Thrace"
 repository-code: "https://github.com/ioaiaaii/quantum-circuit-controller"
 url: "https://ioaiaaii.github.io/project/msc-thesis/"
 abstract: >-
@@ -25,8 +26,8 @@ keywords:
   - site reliability engineering
   - qiskit
 license: Apache-2.0
-version: 1.0.2
-date-released: "2026-06-19"
+version: 1.1.4
+date-released: "2026-08-12"
 references:
   - type: thesis
     title: "Interface between Quantum and Classical Computers"
