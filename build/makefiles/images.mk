@@ -10,7 +10,7 @@ controller-image-build: ## Build the qcc-controller image.
 
 .PHONY: executor-image-build
 executor-image-build: ## Build the qcc-executor image.
-	@$(MAKE) --no-print-directory op-image-build IMAGE_NAME=qcc-executor IMAGE_CONTEXT=$(EXECUTOR_DIR) LD_FLAGS=
+	@$(MAKE) --no-print-directory op-image-build IMAGE_NAME=qcc-executor IMAGE_CONTEXT=$(EXECUTOR_DIR) IMAGE_BUILD_ARGS='--build-arg VERSION=$(VERSION)'
 
 .PHONY: images-build
 images-build: controller-image-build executor-image-build ## Build both container images.

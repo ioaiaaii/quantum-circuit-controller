@@ -21,9 +21,9 @@ EXECUTOR_DIR := qcc-executor
 CLI_DIR      := cmd/qcc
 PROTO_DIR    ?= proto
 
-# Baked into `qcc version` via -ldflags: the tag on releases, branch
-# plus commit on dev builds, same source as the image tags.
-CLI_VERSION ?= $(if $(OP_TAG),$(VERSION),$(VERSION)-$(OP_COMMIT))
+# Stamped into every Go binary via go.mk LD_FLAGS: the tag on tag
+# builds, the branch otherwise, commit and time alongside.
+VERSION_PKG := github.com/ioaiaaii/quantum-circuit-controller/internal/version
 
 ##@ Workflows
 
@@ -53,21 +53,19 @@ tools-check: ## Verify the pinned toolchain is installed.
 .PHONY: qcc-build
 qcc-build: fmt vet ## Build the qcc CLI into ./dist/ with version baked in.
 	@mkdir -p dist
-	go build -ldflags "-X main.version=$(CLI_VERSION)" -o dist/qcc ./$(CLI_DIR)
+	go build -ldflags "$(LD_FLAGS)" -o dist/qcc ./$(CLI_DIR)
 
 .PHONY: qcc-install
 qcc-install: ## Install the qcc CLI into $GOBIN (or ~/go/bin).
-	go install -ldflags "-X main.version=$(CLI_VERSION)" ./$(CLI_DIR)
-
-QCC_DIST_LD_FLAGS := -s -w -X main.version=$(CLI_VERSION)
+	go install -ldflags "$(LD_FLAGS)" ./$(CLI_DIR)
 
 .PHONY: qcc-dist
 qcc-dist: ## Build qcc release binaries for all platforms into dist/ with checksums.
 	@mkdir -p dist
-	@$(MAKE) --no-print-directory op-go-build GOOS=linux  GOARCH=amd64 BINARY_PATH=dist/qcc-linux-amd64  CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
-	@$(MAKE) --no-print-directory op-go-build GOOS=linux  GOARCH=arm64 BINARY_PATH=dist/qcc-linux-arm64  CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
-	@$(MAKE) --no-print-directory op-go-build GOOS=darwin GOARCH=amd64 BINARY_PATH=dist/qcc-darwin-amd64 CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
-	@$(MAKE) --no-print-directory op-go-build GOOS=darwin GOARCH=arm64 BINARY_PATH=dist/qcc-darwin-arm64 CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
+	@$(MAKE) --no-print-directory op-go-build GOOS=linux  GOARCH=amd64 BINARY_PATH=dist/qcc-linux-amd64  CMD_PATH=./$(CLI_DIR)
+	@$(MAKE) --no-print-directory op-go-build GOOS=linux  GOARCH=arm64 BINARY_PATH=dist/qcc-linux-arm64  CMD_PATH=./$(CLI_DIR)
+	@$(MAKE) --no-print-directory op-go-build GOOS=darwin GOARCH=amd64 BINARY_PATH=dist/qcc-darwin-amd64 CMD_PATH=./$(CLI_DIR)
+	@$(MAKE) --no-print-directory op-go-build GOOS=darwin GOARCH=arm64 BINARY_PATH=dist/qcc-darwin-arm64 CMD_PATH=./$(CLI_DIR)
 	@cd dist && shasum -a 256 qcc-linux-amd64 qcc-linux-arm64 qcc-darwin-amd64 qcc-darwin-arm64 > SHA256SUMS
 	@cat dist/SHA256SUMS
 
