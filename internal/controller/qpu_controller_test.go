@@ -122,11 +122,14 @@ var _ = Describe("QPUReconciler", func() {
 		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 		Expect(ready.Reason).To(Equal(qccv1alpha1.ReasonProviderProbeOK))
 
-		// MetadataFresh is intentionally NOT asserted on hardware
-		// providers — live calibration drifts, so freshness is
-		// tracked via status.lastCalibrationTime, not a static
-		// boolean condition (see desiredQPUStatus comment).
-		Expect(qpuConditionByType(&got, qccv1alpha1.ConditionMetadataFresh)).To(BeNil())
+		// A successful probe asserts MetadataFresh=True; a failed one
+		// flips it False with the reason on status.lastError. Hardware
+		// freshness over time is still tracked via
+		// status.lastCalibrationTime.
+		fresh := qpuConditionByType(&got, qccv1alpha1.ConditionMetadataFresh)
+		Expect(fresh).NotTo(BeNil())
+		Expect(fresh.Status).To(Equal(metav1.ConditionTrue))
+		Expect(fresh.Reason).To(Equal(qccv1alpha1.ReasonCalibrationRefreshed))
 	})
 
 	It("leaves an unknown-provider QPU as Unknown (no adapter wired)", func() {
@@ -232,6 +235,16 @@ var _ = Describe("QPUReconciler", func() {
 		Expect(got.Status.Availability).To(Equal(qccv1alpha1.QPUAvailable))
 		Expect(got.Status.Qubits).To(Equal(int32(0)), "probe failed → status.qubits stays zero")
 		Expect(got.EffectiveQubits()).To(Equal(int32(16)), "falls back to spec.qubits hint")
+
+		// The failure surfaces on status: lastError carries the reason,
+		// MetadataFresh flips False.  kubectl users never need the logs.
+		Expect(got.Status.LastError).NotTo(BeNil())
+		Expect(got.Status.LastError.Reason).To(Equal(qccv1alpha1.ReasonProviderProbeFailed))
+		Expect(got.Status.LastError.Message).To(ContainSubstring("simulated probe transport failure"))
+		fresh := findCondition(got.Status.Conditions, qccv1alpha1.ConditionMetadataFresh)
+		Expect(fresh).NotTo(BeNil())
+		Expect(fresh.Status).To(Equal(metav1.ConditionFalse))
+		Expect(fresh.Reason).To(Equal(qccv1alpha1.ReasonProviderProbeFailed))
 	})
 
 	It("is a no-op when the QPU's status already matches the desired state", func() {

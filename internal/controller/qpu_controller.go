@@ -38,8 +38,8 @@ const (
 	// Requires QISKIT_IBM_TOKEN env var on the executor pod.  Treated
 	// as optimistically Available; the probe surfaces live calibration
 	// from the IBM cloud.  Probe failures (bad token, network errors)
-	// leave the QPU Available with empty calibration — the controller
-	// logs the failure and the next reconcile retries.
+	// leave the QPU Available with empty calibration and land on
+	// status.lastError and the MetadataFresh condition.
 	providerIBM = "ibm"
 )
 
@@ -100,24 +100,40 @@ func (r *QPUReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// canonical controller-runtime pattern.
 	base := qpu.DeepCopy()
 
-	if needsProbe {
-		if profile, err := r.probeBackend(ctx, qpu); err != nil {
-			// Probe failures are non-fatal: leave status.qubits at
-			// zero, log the reason, let the next reconcile retry.
-			// The QPU still goes Available based on its provider so
-			// it isn't stuck in Unknown forever.
-			log.Info("ProbeBackend failed; continuing without enrichment",
-				"qpu", qpu.Name, "error", err.Error())
-		} else {
-			applyBackendProfile(qpu, profile)
-		}
-	}
-
+	// Provider policy first; the probe outcome below overrides it.
 	qpu.Status.Availability = desired.Availability
 	qpu.Status.ObservedGeneration = qpu.Generation
 	for _, cond := range desired.Conditions {
 		setQPUCondition(qpu, cond)
 	}
+
+	if needsProbe {
+		if profile, err := r.probeBackend(ctx, qpu); err != nil {
+			// Non-fatal: qubits stays zero, the next reconcile
+			// retries, and the failure lands on status.lastError.
+			log.Info("ProbeBackend failed; continuing without enrichment",
+				"qpu", qpu.Name, "error", err.Error())
+			setQPULastError(qpu, qccv1alpha1.ReasonProviderProbeFailed, err.Error())
+			setQPUCondition(qpu, metav1.Condition{
+				Type:               qccv1alpha1.ConditionMetadataFresh,
+				Status:             metav1.ConditionFalse,
+				Reason:             qccv1alpha1.ReasonProviderProbeFailed,
+				Message:            err.Error(),
+				LastTransitionTime: metav1.Now(),
+			})
+		} else {
+			applyBackendProfile(qpu, profile)
+			qpu.Status.LastError = nil
+			setQPUCondition(qpu, metav1.Condition{
+				Type:               qccv1alpha1.ConditionMetadataFresh,
+				Status:             metav1.ConditionTrue,
+				Reason:             qccv1alpha1.ReasonCalibrationRefreshed,
+				Message:            "probe refreshed backend metadata",
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+	}
+
 	if err := r.Status().Patch(ctx, qpu, client.MergeFrom(base)); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -286,6 +302,19 @@ func qpuStatusMatches(observed, desired qccv1alpha1.QPUStatus, generation int64)
 		}
 	}
 	return true
+}
+
+// setQPULastError records a probe failure, keeping the timestamp when
+// the same failure repeats.
+func setQPULastError(qpu *qccv1alpha1.QPU, reason, message string) {
+	if prev := qpu.Status.LastError; prev != nil && prev.Reason == reason && prev.Message == message {
+		return
+	}
+	qpu.Status.LastError = &qccv1alpha1.QPULastError{
+		Time:    metav1.Now(),
+		Reason:  reason,
+		Message: message,
+	}
 }
 
 func findCondition(conds []metav1.Condition, condType string) *metav1.Condition {
