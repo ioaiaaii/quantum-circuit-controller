@@ -6,17 +6,22 @@ the person developing it.
 
 ## Deployment
 
-The shipped deployment path is kustomize:
+The consumer path is the Helm chart; the
+[chart README](../deploy/helm/qcc/README.md) documents install, upgrade,
+CRD lifecycle, and every value:
 
 ```bash
-make deploy IMG=<controller-image>       # kustomize build config/default | kubectl apply
-kubectl apply -k config/samples/qpu/local/   # register simulators; deploy ships none
+helm install qcc oci://ghcr.io/ioaiaaii/charts/qcc -n qcc-system --create-namespace
 ```
 
-`config/default` composes the CRDs, RBAC, the controller Deployment, the
-executor Deployment and Service, and the metrics Service, all under the
-`quantum-circuit-controller-` name prefix in the
-`quantum-circuit-controller-system` namespace.
+Under Helm, resource names derive from the release name. The kustomize
+path remains for development: `config/default` composes the CRDs, RBAC,
+and both workloads under the `quantum-circuit-controller-` prefix in the
+`quantum-circuit-controller-system` namespace:
+
+```bash
+make deploy IMG=<controller-image>
+```
 
 No QPUs are installed by default. Every backend is an explicit registration.
 `config/samples/qpu/local/` covers the credential-free simulators, and
@@ -34,11 +39,11 @@ For the local kind flow see
 
 ## Configuration reference
 
-### Controller (`quantum-circuit-controller-controller-manager`)
+### Controller
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `QCC_EXECUTOR_ADDR` | `quantum-circuit-controller-executor:9000` | executor gRPC target |
+| `QCC_EXECUTOR_ADDR` | executor Service DNS `:9000` | executor gRPC target |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | in-cluster Collector DNS `:4317` | OTLP/gRPC metrics target |
 | `OTEL_EXPORTER_OTLP_INSECURE` | `true` | plaintext OTLP (in-cluster convention) |
 | `OTEL_SDK_DISABLED` | unset | `true` disables all OTel setup |
@@ -52,7 +57,7 @@ Flags: `--leader-elect` (on in the shipped manifest),
 `/readyz`), `--metrics-bind-address` (controller-runtime's own endpoint;
 the `qcc_*` metrics do not use it).
 
-### Executor (`quantum-circuit-controller-executor`)
+### Executor
 
 | Env var | Default | Meaning |
 |---|---|---|
@@ -223,7 +228,8 @@ planned work rather than a permanent property.
 3. The executor runs as a single replica, for the reason given under
    [scaling and sizing](#scaling-and-sizing).
 4. IBM availability is optimistic, so a failed probe leaves the QPU
-   selectable.
+   selectable. The failure is recorded on `status.lastError` and the
+   `MetadataFresh` condition.
 5. One credential serves the cluster. The per-QPU `credentialSecretRef`
    is not yet wired to the runtime.
 6. Kubernetes Events are not emitted, so lifecycle detail lives in

@@ -42,16 +42,17 @@ Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`,
 
 ## What CI enforces
 
-Six workflows run on both push and pull request, covering lint, unit and
-integration tests, e2e, protobuf compatibility, executor tests, and
-documentation links. Their definitions are in `.github/workflows/`.
+The workflow definitions in `.github/workflows/` are the authoritative
+list of gates: lint, tests, e2e, protobuf compatibility, chart lint and
+install, image analysis, and documentation links, every step a make
+target.
 
-Two properties hold regardless of what is added later. A published tag or
-artifact is never moved, edited, or deleted: consumers pin to it and the
-Go module proxy caches it immutably, so mutating one breaks a reference
-others rely on, and fixes go forward as a new version. An artifact is
-built once and promoted by digest, so the artifact that passed a gate is
-the artifact that ships.
+Two properties hold regardless of what is added later. A published tag
+or artifact is never moved, edited, or deleted: consumers pin to it and
+the Go module proxy caches it immutably, so fixes go forward as a new
+version. A release builds from its tag checkout, so the tag names the
+exact source of every artifact, and the build stamps that identity into
+the binaries and images it produces.
 
 ## Deliberately not adopted
 
@@ -70,7 +71,10 @@ absence reads as a decision rather than an oversight.
 
 ## Current state
 
-There is no image publishing, no signing, no provenance, and no release
-automation: the project sits at SLSA L0. The release pipeline, the gates
-it will run, and the supply-chain artifacts it will produce are tracked in
-[issues](https://github.com/ioaiaaii/quantum-circuit-controller/issues).
+Every merge to `main` publishes multi-arch images to GHCR under the
+moving `edge` tag, with provenance and SBOM attestations. A `vX.Y.Z`
+tag publishes the versioned images, the CLI binaries for four platforms
+with a checksum file and GitHub build provenance, and release notes
+generated from the commit history. A `chart-vX.Y.Z` tag publishes the
+Helm chart to the OCI registry, versioned independently of the
+application.

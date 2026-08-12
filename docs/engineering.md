@@ -46,11 +46,10 @@ user. Both deployments satisfy the restricted Pod Security Standard
 (non-root, no privilege escalation, capabilities dropped, seccomp
 RuntimeDefault).
 
-Kustomize composes the deployment: `config/default` gathers CRDs,
-RBAC, the controller, the executor, and the metrics Service under one
-name prefix, the kubebuilder-standard layout. Helm packaging and
-published images are roadmap items. Today the install path is
-build-and-load ([tutorial](./getting-started.md)).
+Kustomize composes the development deployment: `config/default`
+gathers CRDs, RBAC, and both workloads under one name prefix, the
+kubebuilder-standard layout. Consumers install the published images
+through the [Helm chart](../deploy/helm/qcc/README.md).
 
 ## Release engineering
 
@@ -61,45 +60,24 @@ contract without breaking it, and what CI runs while you do.
 Commitlint configuration and the changelog templates live under
 `build/changelog/`.
 
-The gRPC contract is guarded by `buf`:
-lint, format, and `make proto-breaking` against `main`, so the wire
-contract gets the same review discipline as the CRD schema. CRD changes
-stay additive within `v1alpha1`. Any schema-only (unenforced) field is
-documented as such in [API reference](./api.md). To change either contract:
+The gRPC contract is guarded by `buf` lint and `make proto-breaking`
+against `main`, so the wire contract gets the same review discipline as
+the CRD schema. CRD changes stay additive within `v1alpha1`, and any
+schema-only field is documented as such in the
+[API reference](./api.md). The regeneration commands are in
+[development.md](./development.md).
 
-```bash
-# gRPC
-make proto-lint proto-format proto-generate
-make proto-breaking
-# CRDs
-make manifests generate && make install && make test
-```
-
-Every workflow pins its actions by commit SHA and runs with
-least-privilege permissions:
-
-| Workflow | Runs |
-|---|---|
-| `test.yml` | `make test` (envtest suites) |
-| `test-e2e.yml` | `make test-e2e` (kind smoke) |
-| `lint.yml` | `make lint-config` + `make lint` |
-| `executor.yml` | `uv sync --frozen`, `ruff`, `pytest` |
-| `proto.yml` | `buf lint` + format check |
-| `docs.yml` | `make docs-check` (markdown-triggered) |
-
-There is no image-publish or release workflow yet. Images build locally.
-GHCR publishing, vulnerability scanning, and release automation are
-roadmap items.
+`make ci` reproduces the cluster-free CI stage locally, and
+`make test-e2e` is the second stage. The workflow definitions in
+`.github/workflows/` and the [release guide](./releasing.md) carry the
+rest.
 
 ## Performance
 
-The reconcile hot path carries almost no telemetry work. Only two event
-instruments record inside reconcile, `qcc_circuits_total` and the
-phase-duration histogram, and only at transitions. Everything else is an
-observable gauge read from the controller-runtime informer cache once per
-export cycle, one `List()` per resource family, so the scrape path never
-touches the API server. The cost is staleness: a gauge can lag a status
-change by up to one cycle, thirty seconds by default.
+The reconcile hot path carries almost no telemetry work: two event
+instruments record at transitions, and everything else is an observable
+gauge whose architecture and staleness bound are in
+[observability](./observability.md).
 
 Metric cardinality is budgeted per label rather than left to grow.
 Per-Circuit labels such as `uid` and `provider_job_id` enrich existing

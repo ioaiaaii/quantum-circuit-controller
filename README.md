@@ -15,6 +15,7 @@
 [![Release](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/release.yml/badge.svg)](https://github.com/ioaiaaii/quantum-circuit-controller/actions/workflows/release.yml)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
+[![DOI](https://zenodo.org/badge/1234057453.svg)](https://zenodo.org/badge/latestdoi/1234057453)
 
 QCC is a Kubernetes operator for hybrid quantum-classical execution. Quantum circuits and backends (QPUs) are modeled as custom resources. QCC registers and monitors QPU resources, and manages the orchestration of Circuit execution along with its observability instrumentation.
 
