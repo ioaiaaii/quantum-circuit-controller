@@ -1,6 +1,6 @@
 # qcc
 
-![Version: 0.1.1](https://img.shields.io/badge/Version-0.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.1.2](https://img.shields.io/badge/AppVersion-v1.1.2-informational?style=flat-square)
+![Version: 0.1.2](https://img.shields.io/badge/Version-0.1.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.1.4](https://img.shields.io/badge/AppVersion-v1.1.4-informational?style=flat-square)
 
 Quantum Circuit Controller, a Kubernetes operator that runs quantum circuits as declarative resources.
 
@@ -14,7 +14,7 @@ from the chart's `crds/` directory.
 From the OCI registry:
 
 ```bash
-helm install qcc oci://ghcr.io/ioaiaaii/charts/qcc --version 0.1.1 -n qcc-system --create-namespace
+helm install qcc oci://ghcr.io/ioaiaaii/charts/qcc --version 0.1.2 -n qcc-system --create-namespace
 ```
 
 From a repository checkout:
@@ -29,8 +29,8 @@ Register a local simulator QPU, submit the bell sample, and watch it
 complete:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/v1.1.2/config/samples/qpu/local/aer-statevector.yaml
-kubectl apply -f https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/v1.1.2/config/samples/circuits/bell.yaml
+kubectl apply -f https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/v1.1.4/config/samples/qpu/local/aer-statevector.yaml
+kubectl apply -f https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/v1.1.4/config/samples/circuits/bell.yaml
 kubectl get circuits -w
 ```
 
@@ -50,7 +50,7 @@ them. When a release changes the CRDs, apply them from the matching
 tag before `helm upgrade`:
 
 ```bash
-kubectl apply -k "github.com/ioaiaaii/quantum-circuit-controller/config/crd?ref=v1.1.2"
+kubectl apply -k "github.com/ioaiaaii/quantum-circuit-controller/config/crd?ref=v1.1.4"
 ```
 
 ## Scaling limits
