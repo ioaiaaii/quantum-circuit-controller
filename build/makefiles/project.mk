@@ -103,7 +103,7 @@ executor-lint: ## Lint executor Python code via uv + ruff.
 
 CHART_DIR     := deploy/helm/qcc
 CHART_VERSION  = $(shell awk '/^version:/{print $$2}' $(CHART_DIR)/Chart.yaml)
-CHART_OCI_REPO ?= oci://ghcr.io/ioaiaaii/charts
+CHART_OCI_REPO := oci://ghcr.io/ioaiaaii/charts
 
 .PHONY: chart-lint
 chart-lint: ## Lint the Helm chart with chart-testing.
