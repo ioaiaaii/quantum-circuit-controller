@@ -1,5 +1,4 @@
 {{ if .Versions -}}
-+++
 {{ if .Unreleased.CommitGroups -}}
 {{ range .Unreleased.CommitGroups -}}
 ### {{ .Title }}
@@ -42,6 +41,13 @@
 {{ end }}
 {{ end -}}
 {{ end -}}
+
+### Images
+
+```shell
+docker pull ghcr.io/ioaiaaii/qcc-controller:{{ .Tag.Name }}
+docker pull ghcr.io/ioaiaaii/qcc-executor:{{ .Tag.Name }}
+```
 {{ end -}}
 
 
