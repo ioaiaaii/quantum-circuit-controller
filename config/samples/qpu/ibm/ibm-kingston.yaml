@@ -14,9 +14,5 @@ spec:
   provider: ibm
   backendName: ibm_kingston
   kind: hardware
-  access:
-    credentialSecretRef:
-      name: ibm-quantum-token
-      namespace: quantum-circuit-controller-system
   capabilities:
     maxShots: 100000

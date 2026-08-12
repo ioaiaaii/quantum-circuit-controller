@@ -26,10 +26,6 @@ spec:
   provider: ibm
   backendName: ibm_fez
   kind: hardware
-  access:
-    credentialSecretRef:
-      name: ibm-quantum-token
-      namespace: quantum-circuit-controller-system
   capabilities:
     # IBM Open Plan limit; bumped via paid plans.  Move 1 filters out
     # Circuits whose spec.shots exceeds this.

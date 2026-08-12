@@ -18,9 +18,5 @@ spec:
   provider: ibm
   backendName: ibm_marrakesh
   kind: hardware
-  access:
-    credentialSecretRef:
-      name: ibm-quantum-token
-      namespace: quantum-circuit-controller-system
   capabilities:
     maxShots: 100000
