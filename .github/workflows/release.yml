@@ -11,6 +11,9 @@ jobs:
   release:
     permissions:
       contents: write
+      # Build provenance for the CLI binaries.
+      id-token: write
+      attestations: write
     name: Publish GitHub Release
     runs-on: ubuntu-latest
     steps:
@@ -22,32 +25,28 @@ jobs:
           # Fetch the entire history for the changelog.
           fetch-depth: 0
 
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+
+      - name: Build CLI binaries
+        run: make qcc-dist
+
+      # Consumers verify with: gh attestation verify <file> --owner ioaiaaii
+      - name: Attest CLI build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: dist/qcc-*
+
       - name: Generate release notes
-        id: generate_changelog
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          changelog=$(make op-changelog-release TAG="$TAG")
-          {
-            echo "changelog<<EOF"
-            echo "$changelog"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+        run: make op-changelog-release TAG="$TAG" > "$RUNNER_TEMP/notes.md"
 
       - name: Create GitHub Release
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
         env:
-          CHANGELOG: ${{ steps.generate_changelog.outputs.changelog }}
-        with:
-          script: |
-            const tag = process.env.GITHUB_REF_NAME;
-            const changelog = process.env.CHANGELOG;
-            await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: tag,
-              name: `${tag}`,
-              body: changelog,
-              draft: false,
-              prerelease: false
-            });
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          --title "$GITHUB_REF_NAME"
+          --notes-file "$RUNNER_TEMP/notes.md"
+          dist/qcc-* dist/SHA256SUMS
