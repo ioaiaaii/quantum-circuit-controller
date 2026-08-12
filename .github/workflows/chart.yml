@@ -1,0 +1,72 @@
+name: Chart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/helm/**"
+      - "build/ci/.chart-testing.yaml"
+      - "Makefile"
+      - "build/makefiles/**"
+      - "build/repo-operator"
+      - ".github/actions/**"
+      - ".github/workflows/chart.yml"
+  pull_request:
+    paths:
+      - "deploy/helm/**"
+      - "build/ci/.chart-testing.yaml"
+      - "Makefile"
+      - "build/makefiles/**"
+      - "build/repo-operator"
+      - ".github/actions/**"
+      - ".github/workflows/chart.yml"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    permissions:
+      contents: read
+    name: Lint Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+        with:
+          go: "false"
+
+      - name: Lint the chart
+        run: make chart-lint
+
+  install:
+    permissions:
+      contents: read
+    name: Install Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+        with:
+          go: "false"
+
+      - name: Create a kind cluster
+        run: make setup-test-e2e KIND_CLUSTER=qcc-chart-test
+
+      - name: Lint and install the chart
+        run: make chart-test

@@ -1,0 +1,45 @@
+name: Chart Release
+
+# A chart-v* tag publishes the chart to the OCI registry. The chart
+# versions independently of the application: the tag must match the
+# version in Chart.yaml.
+on:
+  push:
+    tags: ["chart-v*"]
+
+permissions: {}
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      packages: write
+    name: Publish Chart to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+        with:
+          go: "false"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the tag matches Chart.yaml
+        run: make chart-version-check TAG="$GITHUB_REF_NAME"
+
+      - name: Lint the chart
+        run: make chart-lint
+
+      - name: Publish the chart
+        run: make chart-push

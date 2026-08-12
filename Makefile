@@ -245,6 +245,7 @@ include $(OPERATOR_PATH)/makefiles/changelog.mk
 include $(OPERATOR_PATH)/makefiles/go.mk
 include $(OPERATOR_PATH)/makefiles/image.mk
 include $(OPERATOR_PATH)/makefiles/scan.mk
+include $(OPERATOR_PATH)/makefiles/chart.mk
 
 include build/makefiles/project.mk
 include build/makefiles/images.mk
