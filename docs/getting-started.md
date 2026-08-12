@@ -8,12 +8,12 @@ step tells you what to expect before you move on.
 
 ### Requirements
 
-| Requirement | Pinned in | Provided by |
-|---|---|---|
-| A container runtime: Docker, or a compatible engine such as [Colima](https://github.com/abiosoft/colima) or Podman | not pinned | your system; `CONTAINER_TOOL` defaults to `docker` |
-| Go | `go.mod` (`toolchain` directive) | any recent Go on `PATH` fetches the pinned version |
-| kubectl, kind, helm, kubebuilder, buf, python, uv, jq, make, lychee, vhs | `.mise.toml` | `make tools-install` |
-| kustomize, controller-gen, setup-envtest, golangci-lint | `Makefile` | installed into `./bin` on first use |
+You need a container runtime, Docker or a compatible engine such as
+[Colima](https://github.com/abiosoft/colima) or Podman, and any recent
+[Go](https://go.dev/dl/), which fetches the version in `go.mod` on first
+build. Every other
+tool is pinned in `.mise.toml`, and the scaffold's own tools install
+into `./bin` on first use.
 
 Install the toolchain and check it:
 
@@ -43,23 +43,30 @@ which Grafana's sidecar picks up within a minute.
 
 You need this stack to see the `qcc_*` metrics, but QCC does not depend on
 it. Without a Collector the controller logs export errors and everything
-else keeps working. To turn the SDK off entirely, set
-`OTEL_SDK_DISABLED=true` on the controller Deployment.
+else keeps working. Leave `controller.otel.endpoint` unset to keep
+the exporter off.
 
 ## Deploy QCC
 
-```bash
-make dist-up
-```
-
-This builds both images, loads them into the kind cluster, installs the
-CRDs, and deploys the controller and the executor into the
-`quantum-circuit-controller-system` namespace. Confirm two pods are
-running:
+Install the chart from the OCI registry, wiring the controller's OTLP
+exporter to the Collector from the previous step:
 
 ```bash
-kubectl get pods -n quantum-circuit-controller-system
+helm install qcc oci://ghcr.io/ioaiaaii/charts/qcc --version 0.1.0 \
+  -n qcc-system --create-namespace \
+  --set controller.otel.endpoint=otelcol-opentelemetry-collector.monitoring.svc.cluster.local:4317
 ```
+
+This installs the CRDs and deploys the controller and the executor into
+the `qcc-system` namespace, pulling the released images. Confirm two
+pods are running:
+
+```bash
+kubectl get pods -n qcc-system
+```
+
+To build and deploy from source instead, use `make dist-up`; the
+[development guide](./development.md) covers that flow.
 
 If a pod does not reach `Running`, check its logs and events. The
 [troubleshooting section](./operations.md#troubleshooting) covers the
@@ -78,16 +85,26 @@ IBM devices, so they reproduce a device's basis gates, coupling map, and
 noise without touching it.
 
 Real hardware (`spec.kind: hardware`) profiles live in
-`config/samples/qpu/ibm/`: `ibm-fez`, `ibm-kingston`, `ibm-marrakesh`,
-and `ibm-sherbrooke`, each pointing at a live IBM device through
+`config/samples/qpu/ibm/`: `ibm-fez`, `ibm-kingston`, and
+`ibm-marrakesh`, each pointing at a live IBM device through
 `spec.backendName`. These need an IBM Quantum account and are registered
 in the [hardware section](#run-on-real-ibm-hardware) below.
 
-Register the simulators:
+Register the whole simulator bundle straight from the repository, no
+checkout needed:
 
 ```bash
-kubectl apply -k config/samples/qpu/local/
+kubectl apply -k "github.com/ioaiaaii/quantum-circuit-controller/config/samples/qpu/local?ref=main"
 ```
+
+Or register a single backend, here the ideal reference simulator:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/ioaiaaii/quantum-circuit-controller/main/config/samples/qpu/local/aer-statevector.yaml
+```
+
+From a checkout, `kubectl apply -k config/samples/qpu/local/` does the
+same.
 
 The controller probes each backend through the executor as it is
 registered, and records the qubit count, basis gates, coupling edges,
@@ -113,12 +130,41 @@ kubectl get qpu fake-brisbane -o yaml
 
 ## Run your first circuit
 
-Build the CLI and submit a Bell state to the ideal simulator:
+Download the released CLI and its checksums for your platform:
 
 ```bash
-make qcc-build
-./dist/qcc run examples/bell-state.qasm --backend aer-statevector
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -LO "https://github.com/ioaiaaii/quantum-circuit-controller/releases/latest/download/qcc-${OS}-${ARCH}"
+curl -LO "https://github.com/ioaiaaii/quantum-circuit-controller/releases/latest/download/SHA256SUMS"
 ```
+
+Verify the binary against the checksum file, then install it:
+
+```bash
+grep "qcc-${OS}-${ARCH}" SHA256SUMS | shasum -a 256 -c -
+```
+
+```bash
+chmod +x "qcc-${OS}-${ARCH}" && mv "qcc-${OS}-${ARCH}" qcc
+```
+
+Confirm the binary runs and reports the release version:
+
+```bash
+./qcc version
+```
+
+Submit a Bell state to the ideal simulator:
+
+```bash
+./qcc run examples/bell-state.qasm --backend aer-statevector
+```
+
+Releases also carry GitHub build provenance for every binary.
+`go install github.com/ioaiaaii/quantum-circuit-controller/cmd/qcc@latest`
+builds the same CLI through the module proxy, and `make qcc-build` from a
+checkout.
 
 The CLI creates a Circuit, streams the phase transitions, and prints a
 _result card_: the backend's calibration context, the transpiled depth and
@@ -133,16 +179,16 @@ Run the same circuit against a noisy calibration snapshot and compare the
 histogram:
 
 ```bash
-./dist/qcc run examples/bell-state.qasm --backend fake-brisbane
+./qcc run examples/bell-state.qasm --backend fake-brisbane
 ```
 
 Try the other modes now that a backend is registered:
 
 ```bash
-./dist/qcc draw examples/bell-state.qasm
-./dist/qcc schedule examples/bell-state.qasm --backend fake-brisbane
-./dist/qcc run examples/thesis/algorithms/shor.py --performance-test
-./dist/qcc get circuits
+./qcc draw examples/bell-state.qasm
+./qcc schedule examples/bell-state.qasm --backend fake-brisbane
+./qcc run examples/thesis/algorithms/shor.py --performance-test
+./qcc get circuits
 ```
 
 ## Look at the dashboards
@@ -169,26 +215,25 @@ credential up:
 
 ```bash
 kubectl create secret generic ibm-quantum-token \
-  -n quantum-circuit-controller-system \
+  -n qcc-system \
   --from-literal=QISKIT_IBM_TOKEN='<your-token>'
 
-kubectl rollout restart deployment/quantum-circuit-controller-executor \
-  -n quantum-circuit-controller-system
+kubectl rollout restart deployment/qcc-executor -n qcc-system
 ```
 
 Register the hardware profiles:
 
 ```bash
-kubectl apply -k config/samples/qpu/ibm/
+kubectl apply -k "github.com/ioaiaaii/quantum-circuit-controller/config/samples/qpu/ibm?ref=main"
 ```
 
 Hardware queues take minutes to hours, so submit with `--detach` and
 come back later:
 
 ```bash
-./dist/qcc run examples/thesis/algorithms/shor.py --backend ibm-fez --detach
-./dist/qcc get circuits
-./dist/qcc get circuit <circuit-name>
+./qcc run examples/thesis/algorithms/shor.py --backend ibm-fez --detach
+./qcc get circuits
+./qcc get circuit <circuit-name>
 ```
 
 where `<circuit-name>` is the name the CLI printed when it submitted the
@@ -209,12 +254,13 @@ fails. Both appear under
 
 ## Cleaning up
 
-The first target removes QCC and its CRDs, which also deletes every
-Circuit and QPU you created. The second deletes the observability stack
-and the kind cluster.
+The first command removes QCC. Deleting the CRDs afterwards also
+deletes every Circuit and QPU you created. The last removes the
+observability stack and the kind cluster.
 
 ```bash
-make dist-down
+helm uninstall qcc -n qcc-system
+kubectl delete crd circuits.qcc.io qpus.qcc.io
 make platform-down
 ```
 
