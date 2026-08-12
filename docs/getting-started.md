@@ -15,9 +15,13 @@ build. Every other
 tool is pinned in `.mise.toml`, and the scaffold's own tools install
 into `./bin` on first use.
 
-Install the toolchain and check it:
+From a checkout, initialise the build submodule first, since every make
+target includes from it, then trust the pinned toolchain config and
+install it:
 
 ```bash
+git submodule update --init
+mise trust
 make tools-install
 make tools-check
 ```
