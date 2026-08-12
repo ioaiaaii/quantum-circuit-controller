@@ -21,8 +21,9 @@ EXECUTOR_DIR := qcc-executor
 CLI_DIR      := cmd/qcc
 PROTO_DIR    ?= proto
 
-# Baked into `qcc version` via -ldflags.
-CLI_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# Baked into `qcc version` via -ldflags: the tag on releases, branch
+# plus commit on dev builds, same source as the image tags.
+CLI_VERSION ?= $(if $(OP_TAG),$(VERSION),$(VERSION)-$(OP_COMMIT))
 
 ##@ Workflows
 
@@ -57,6 +58,18 @@ qcc-build: fmt vet ## Build the qcc CLI into ./dist/ with version baked in.
 .PHONY: qcc-install
 qcc-install: ## Install the qcc CLI into $GOBIN (or ~/go/bin).
 	go install -ldflags "-X main.version=$(CLI_VERSION)" ./$(CLI_DIR)
+
+QCC_DIST_LD_FLAGS := -s -w -X main.version=$(CLI_VERSION)
+
+.PHONY: qcc-dist
+qcc-dist: ## Build qcc release binaries for all platforms into dist/ with checksums.
+	@mkdir -p dist
+	@$(MAKE) --no-print-directory op-go-build GOOS=linux  GOARCH=amd64 BINARY_PATH=dist/qcc-linux-amd64  CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
+	@$(MAKE) --no-print-directory op-go-build GOOS=linux  GOARCH=arm64 BINARY_PATH=dist/qcc-linux-arm64  CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
+	@$(MAKE) --no-print-directory op-go-build GOOS=darwin GOARCH=amd64 BINARY_PATH=dist/qcc-darwin-amd64 CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
+	@$(MAKE) --no-print-directory op-go-build GOOS=darwin GOARCH=arm64 BINARY_PATH=dist/qcc-darwin-arm64 CMD_PATH=./$(CLI_DIR) LD_FLAGS="$(QCC_DIST_LD_FLAGS)"
+	@cd dist && shasum -a 256 qcc-linux-amd64 qcc-linux-arm64 qcc-darwin-amd64 qcc-darwin-arm64 > SHA256SUMS
+	@cat dist/SHA256SUMS
 
 ##@ Protobuf
 
