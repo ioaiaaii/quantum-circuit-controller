@@ -64,9 +64,9 @@ Contributions are welcome. Planned work is tracked in
 
 ## Citation
 
-QCC is the artifact of the MSc thesis [*Interface between Quantum and Classical Computers*](https://ioaiaaii.github.io/project/msc-thesis/),
-Democritus University of Thrace, 2026.
-Please use the *Cite this repository* button above, to generate it in APA or BibTex format.
+QCC is the artifact of the MSc thesis [*Interface between Quantum and Classical Computers*](https://doi.org/10.5281/zenodo.22283449)
+(Democritus University of Thrace, 2026).
+To cite the software, use the *Cite this repository* button above to generate APA or BibTeX.
 
 ## License
 

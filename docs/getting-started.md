@@ -10,10 +10,9 @@ step tells you what to expect before you move on.
 
 You need a container runtime, Docker or a compatible engine such as
 [Colima](https://github.com/abiosoft/colima) or Podman, and any recent
-[Go](https://go.dev/dl/), which fetches the version in `go.mod` on first
-build. Every other
-tool is pinned in `.mise.toml`, and the scaffold's own tools install
-into `./bin` on first use.
+[Go](https://go.dev/dl/); the toolchain pinned in `go.mod` is fetched on
+first build. Every other tool is pinned in `.mise.toml`, and the
+scaffold's own tools install into `./bin` on first use.
 
 From a checkout, initialise the build submodule first, since every make
 target includes from it, then trust the pinned toolchain config and
