@@ -6,6 +6,7 @@ authors:
   - family-names: Savvaidis
     given-names: Ioannis
     affiliation: "Democritus University of Thrace"
+    orcid: "https://orcid.org/0009-0002-9393-2634"
 repository-code: "https://github.com/ioaiaaii/quantum-circuit-controller"
 url: "https://ioaiaaii.github.io/project/msc-thesis/"
 abstract: >-
@@ -27,16 +28,15 @@ keywords:
   - qiskit
 license: Apache-2.0
 doi: 10.5281/zenodo.21906210
-version: 1.1.4
-date-released: "2026-08-12"
 references:
   - type: thesis
     title: "Interface between Quantum and Classical Computers"
     authors:
       - family-names: Savvaidis
         given-names: Ioannis
+        orcid: "https://orcid.org/0009-0002-9393-2634"
     institution:
       name: "Democritus University of Thrace"
     thesis-type: "MSc thesis"
     year: 2026
-    url: "https://ioaiaaii.github.io/project/msc-thesis/"
+    doi: 10.5281/zenodo.22283449

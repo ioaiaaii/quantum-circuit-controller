@@ -5,7 +5,8 @@
   "creators": [
     {
       "name": "Savvaidis, Ioannis",
-      "affiliation": "Democritus University of Thrace"
+      "affiliation": "Democritus University of Thrace",
+      "orcid": "0009-0002-9393-2634"
     }
   ],
   "license": "Apache-2.0",
@@ -22,9 +23,10 @@
   ],
   "related_identifiers": [
     {
-      "identifier": "https://ioaiaaii.github.io/project/msc-thesis/",
+      "identifier": "10.5281/zenodo.22283449",
       "relation": "isSupplementTo",
-      "scheme": "url"
+      "resource_type": "publication-thesis",
+      "scheme": "doi"
     }
   ]
 }
