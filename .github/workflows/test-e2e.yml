@@ -7,6 +7,7 @@ on:
       - "**.md"
       - "docs/**"
       - CITATION.cff
+      - .zenodo.json
       - "LICENSE"
       - ".gitignore"
       - ".pre-commit-config.yaml"
